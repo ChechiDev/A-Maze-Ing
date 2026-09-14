@@ -1,5 +1,6 @@
 """Grid primitives for the reusable maze generation package."""
 
+from dataclasses import dataclass
 from enum import IntFlag
 
 
@@ -25,6 +26,20 @@ class Wall(IntFlag):
 
 
 ALL_WALLS = Wall.NORTH | Wall.EAST | Wall.SOUTH | Wall.WEST
+
+
+@dataclass(frozen=True, slots=True)
+class Position:
+    """Public maze coordinates using the ``x,y`` format from config/output."""
+
+    x: int
+    y: int
+
+    def move(self, wall: Wall) -> "Position":
+        """Return a new position moved one cell through the given wall."""
+        delta_x, delta_y = wall.delta
+        return Position(self.x + delta_x, self.y + delta_y)
+
 
 _OPPOSITE_WALLS: dict[Wall, Wall] = {
     Wall.NORTH: Wall.SOUTH,

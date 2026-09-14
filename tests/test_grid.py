@@ -1,6 +1,6 @@
 import pytest
 
-from mazegen.grid import ALL_WALLS, Wall
+from mazegen.grid import ALL_WALLS, Position, Wall
 
 
 def test_wall_values_match_hexadecimal_encoding() -> None:
@@ -51,3 +51,54 @@ def test_wall_opposite_rejects_non_single_walls(wall: Wall) -> None:
 def test_wall_delta_rejects_non_single_walls(wall: Wall) -> None:
     with pytest.raises(ValueError, match="single cardinal wall"):
         _ = wall.delta
+
+
+def test_position_stores_public_xy_coordinates() -> None:
+    position = Position(1, 2)
+
+    assert position.x == 1
+    assert position.y == 2
+
+
+def test_position_uses_value_equality() -> None:
+    assert Position(1, 2) == Position(1, 2)
+    assert Position(1, 2) != Position(2, 1)
+
+
+def test_position_is_immutable() -> None:
+    position = Position(1, 2)
+
+    with pytest.raises(AttributeError):
+        setattr(position, "x", 3)
+
+
+def test_position_move_east_matches_required_example() -> None:
+    assert Position(1, 2).move(Wall.EAST) == Position(2, 2)
+
+
+@pytest.mark.parametrize(
+    ("wall", "expected"),
+    (
+        (Wall.NORTH, Position(1, 1)),
+        (Wall.EAST, Position(2, 2)),
+        (Wall.SOUTH, Position(1, 3)),
+        (Wall.WEST, Position(0, 2)),
+    ),
+)
+def test_position_move_uses_public_xy_coordinates(
+    wall: Wall,
+    expected: Position,
+) -> None:
+    assert Position(1, 2).move(wall) == expected
+
+
+@pytest.mark.parametrize(
+    "wall",
+    (
+        Wall.NORTH | Wall.EAST,
+        Wall(0),
+    ),
+)
+def test_position_move_rejects_non_single_walls(wall: Wall) -> None:
+    with pytest.raises(ValueError, match="single cardinal wall"):
+        Position(1, 2).move(wall)
