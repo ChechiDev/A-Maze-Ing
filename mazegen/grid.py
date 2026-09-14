@@ -14,11 +14,13 @@ class Wall(IntFlag):
     @property
     def opposite(self) -> "Wall":
         """Return the wall at the opposite cardinal direction."""
+        _validate_single_wall(self)
         return _OPPOSITE_WALLS[self]
 
     @property
     def delta(self) -> tuple[int, int]:
         """Return the public ``(x, y)`` movement for this wall."""
+        _validate_single_wall(self)
         return _WALL_DELTAS[self]
 
 
@@ -37,3 +39,9 @@ _WALL_DELTAS: dict[Wall, tuple[int, int]] = {
     Wall.SOUTH: (0, 1),
     Wall.WEST: (-1, 0),
 }
+
+
+def _validate_single_wall(wall: Wall) -> None:
+    """Ensure wall operations receive exactly one cardinal wall."""
+    if wall not in _OPPOSITE_WALLS:
+        raise ValueError("expected a single cardinal wall")
