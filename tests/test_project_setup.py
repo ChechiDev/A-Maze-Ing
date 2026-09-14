@@ -1,8 +1,11 @@
 from pathlib import Path
 
 
-def test_mandatory_markdown_exists() -> None:
-    assert Path("doc/a-maze-ing.md").is_file()
+def test_private_documentation_is_gitignored() -> None:
+    gitignore = Path(".gitignore").read_text(encoding="utf-8")
+
+    assert "doc/" in gitignore
+    assert ".doc/" in gitignore
 
 
 def test_maze_analyzer_script_exists() -> None:
