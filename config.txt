@@ -1,9 +1,14 @@
-# A-Maze-ing default configuration
-# Mandatory KEY=VALUE format.
-WIDTH=20
-HEIGHT=15
+# A-Maze-ing default configuration.
+# Use one KEY=VALUE pair per non-comment line.
+# Lines starting with # are comments.
+# Inline comments are not supported in KEY=VALUE lines.
+# ENTRY and EXIT use public x,y coordinates.
+# Required keys: WIDTH, HEIGHT, ENTRY, EXIT, OUTPUT_FILE, PERFECT.
+# Optional keys supported initially: SEED.
+WIDTH=10
+HEIGHT=10
 ENTRY=0,0
-EXIT=19,14
+EXIT=9,9
 OUTPUT_FILE=maze.txt
-PERFECT=False
+PERFECT=True
 SEED=42
