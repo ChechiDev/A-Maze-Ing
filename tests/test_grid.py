@@ -1,6 +1,6 @@
 import pytest
 
-from mazegen.grid import ALL_WALLS, Cell, Position, Wall
+from mazegen.grid import ALL_WALLS, Cell, Grid, Position, Wall
 
 
 def test_wall_values_match_hexadecimal_encoding() -> None:
@@ -180,3 +180,157 @@ def test_cell_wall_operations_reject_non_single_walls(
 
     with pytest.raises(ValueError, match="single cardinal wall"):
         method(wall)
+
+
+def test_grid_stores_public_dimensions() -> None:
+    grid = Grid(2, 3)
+
+    assert grid.width == 2
+    assert grid.height == 3
+
+
+@pytest.mark.parametrize(
+    ("width", "height"),
+    (
+        (0, 1),
+        (1, 0),
+        (-1, 1),
+        (1, -1),
+    ),
+)
+def test_grid_rejects_non_positive_dimensions(
+    width: int,
+    height: int,
+) -> None:
+    with pytest.raises(ValueError, match="width and height must be positive"):
+        Grid(width, height)
+
+
+def test_grid_starts_with_all_cell_walls_closed() -> None:
+    grid = Grid(2, 2)
+
+    for position in grid.positions():
+        assert grid.cell_at(position).walls == ALL_WALLS
+
+
+@pytest.mark.parametrize(
+    ("position", "expected"),
+    (
+        (Position(0, 0), True),
+        (Position(1, 2), True),
+        (Position(-1, 0), False),
+        (Position(0, -1), False),
+        (Position(2, 0), False),
+        (Position(0, 3), False),
+    ),
+)
+def test_grid_in_bounds_uses_public_xy_coordinates(
+    position: Position,
+    expected: bool,
+) -> None:
+    assert Grid(2, 3).in_bounds(position) is expected
+
+
+def test_grid_cell_at_returns_cell_for_valid_position() -> None:
+    assert isinstance(Grid(2, 2).cell_at(Position(1, 1)), Cell)
+
+
+def test_grid_cell_at_rejects_out_of_bounds_position() -> None:
+    with pytest.raises(ValueError, match="outside the grid"):
+        Grid(2, 2).cell_at(Position(2, 0))
+
+
+def test_grid_cell_at_returns_same_cell_state_for_same_position() -> None:
+    grid = Grid(2, 1)
+
+    grid.cell_at(Position(0, 0)).open_wall(Wall.EAST)
+
+    assert not grid.cell_at(Position(0, 0)).has_wall(Wall.EAST)
+
+
+def test_grid_neighbors_for_top_left_corner() -> None:
+    assert Grid(2, 2).neighbors(Position(0, 0)) == (
+        (Position(1, 0), Wall.EAST),
+        (Position(0, 1), Wall.SOUTH),
+    )
+
+
+def test_grid_neighbors_for_center_position() -> None:
+    assert Grid(3, 3).neighbors(Position(1, 1)) == (
+        (Position(1, 0), Wall.NORTH),
+        (Position(2, 1), Wall.EAST),
+        (Position(1, 2), Wall.SOUTH),
+        (Position(0, 1), Wall.WEST),
+    )
+
+
+def test_grid_neighbors_rejects_out_of_bounds_position() -> None:
+    with pytest.raises(ValueError, match="outside the grid"):
+        Grid(2, 2).neighbors(Position(-1, 0))
+
+
+def test_grid_open_wall_opens_symmetric_neighbor_wall() -> None:
+    grid = Grid(2, 1)
+
+    grid.open_wall(Position(0, 0), Wall.EAST)
+
+    assert not grid.cell_at(Position(0, 0)).has_wall(Wall.EAST)
+    assert not grid.cell_at(Position(1, 0)).has_wall(Wall.WEST)
+
+
+def test_grid_open_wall_south_opens_neighbor_north_wall() -> None:
+    grid = Grid(1, 2)
+
+    grid.open_wall(Position(0, 0), Wall.SOUTH)
+
+    assert not grid.cell_at(Position(0, 0)).has_wall(Wall.SOUTH)
+    assert not grid.cell_at(Position(0, 1)).has_wall(Wall.NORTH)
+
+
+def test_grid_open_wall_does_not_change_unrelated_walls() -> None:
+    grid = Grid(2, 1)
+
+    grid.open_wall(Position(0, 0), Wall.EAST)
+
+    assert grid.cell_at(Position(0, 0)).has_wall(Wall.NORTH)
+    assert grid.cell_at(Position(0, 0)).has_wall(Wall.SOUTH)
+    assert grid.cell_at(Position(0, 0)).has_wall(Wall.WEST)
+    assert grid.cell_at(Position(1, 0)).has_wall(Wall.NORTH)
+    assert grid.cell_at(Position(1, 0)).has_wall(Wall.EAST)
+    assert grid.cell_at(Position(1, 0)).has_wall(Wall.SOUTH)
+
+
+@pytest.mark.parametrize("wall", (Wall.NORTH, Wall.WEST))
+def test_grid_open_wall_rejects_opening_outside_grid(wall: Wall) -> None:
+    grid = Grid(2, 2)
+
+    with pytest.raises(ValueError, match="outside the grid"):
+        grid.open_wall(Position(0, 0), wall)
+
+    assert grid.cell_at(Position(0, 0)).walls == ALL_WALLS
+
+
+def test_grid_open_wall_rejects_start_position_outside_grid() -> None:
+    with pytest.raises(ValueError, match="outside the grid"):
+        Grid(2, 2).open_wall(Position(2, 0), Wall.EAST)
+
+
+@pytest.mark.parametrize(
+    "wall",
+    (
+        Wall(0),
+        Wall.NORTH | Wall.EAST,
+    ),
+)
+def test_grid_open_wall_rejects_non_single_walls(wall: Wall) -> None:
+    with pytest.raises(ValueError, match="single cardinal wall"):
+        Grid(2, 2).open_wall(Position(0, 0), wall)
+
+
+def test_grid_positions_use_row_major_public_xy_order() -> None:
+    assert Grid(2, 2).positions() == (
+        Position(0, 0),
+        Position(1, 0),
+        Position(0, 1),
+        Position(1, 1),
+    )

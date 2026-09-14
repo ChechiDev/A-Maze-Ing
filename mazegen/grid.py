@@ -72,6 +72,71 @@ class Cell:
         self._walls |= wall
 
 
+class Grid:
+    """Rectangular maze grid using public ``x,y`` coordinates."""
+
+    def __init__(self, width: int, height: int) -> None:
+        """Create a grid with all cell walls closed."""
+        if width <= 0 or height <= 0:
+            raise ValueError("grid width and height must be positive")
+        self._width = width
+        self._height = height
+        self._cells = tuple(
+            tuple(Cell() for _ in range(width)) for _ in range(height)
+        )
+
+    @property
+    def width(self) -> int:
+        """Return the grid width."""
+        return self._width
+
+    @property
+    def height(self) -> int:
+        """Return the grid height."""
+        return self._height
+
+    def in_bounds(self, position: Position) -> bool:
+        """Return whether the public position is inside the grid."""
+        return 0 <= position.x < self._width and 0 <= position.y < self._height
+
+    def cell_at(self, position: Position) -> Cell:
+        """Return the cell at the public position."""
+        self._ensure_in_bounds(position)
+        return self._cells[position.y][position.x]
+
+    def neighbors(self, position: Position) -> tuple[tuple[Position, Wall], ...]:
+        """Return in-bounds neighbor positions and the wall leading to each."""
+        self._ensure_in_bounds(position)
+        neighbors: list[tuple[Position, Wall]] = []
+        for wall in (Wall.NORTH, Wall.EAST, Wall.SOUTH, Wall.WEST):
+            neighbor = position.move(wall)
+            if self.in_bounds(neighbor):
+                neighbors.append((neighbor, wall))
+        return tuple(neighbors)
+
+    def open_wall(self, position: Position, wall: Wall) -> None:
+        """Open a wall and its opposite neighbor wall symmetrically."""
+        neighbor = position.move(wall)
+        self._ensure_in_bounds(position)
+        if not self.in_bounds(neighbor):
+            raise ValueError("cannot open a wall outside the grid")
+        self.cell_at(position).open_wall(wall)
+        self.cell_at(neighbor).open_wall(wall.opposite)
+
+    def positions(self) -> tuple[Position, ...]:
+        """Return all positions in row-major public ``x,y`` order."""
+        return tuple(
+            Position(x, y)
+            for y in range(self._height)
+            for x in range(self._width)
+        )
+
+    def _ensure_in_bounds(self, position: Position) -> None:
+        """Raise a clear error if position is outside the grid."""
+        if not self.in_bounds(position):
+            raise ValueError("position is outside the grid")
+
+
 _OPPOSITE_WALLS: dict[Wall, Wall] = {
     Wall.NORTH: Wall.SOUTH,
     Wall.EAST: Wall.WEST,
