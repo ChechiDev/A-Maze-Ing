@@ -1,0 +1,20 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# IA
+.opencode
+
+# Project documentation not tracked in GitHub
+doc/
+.doc/
+
+# Provided helper files not used by the project
+utils/
