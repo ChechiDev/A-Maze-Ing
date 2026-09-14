@@ -1,6 +1,6 @@
 import pytest
 
-from mazegen.grid import ALL_WALLS, Position, Wall
+from mazegen.grid import ALL_WALLS, Cell, Position, Wall
 
 
 def test_wall_values_match_hexadecimal_encoding() -> None:
@@ -102,3 +102,72 @@ def test_position_move_uses_public_xy_coordinates(
 def test_position_move_rejects_non_single_walls(wall: Wall) -> None:
     with pytest.raises(ValueError, match="single cardinal wall"):
         Position(1, 2).move(wall)
+
+
+def test_cell_starts_with_all_walls_closed() -> None:
+    assert Cell().walls == ALL_WALLS
+
+
+@pytest.mark.parametrize(
+    "wall",
+    (Wall.NORTH, Wall.EAST, Wall.SOUTH, Wall.WEST),
+)
+def test_cell_has_wall_for_each_initial_cardinal_wall(wall: Wall) -> None:
+    assert Cell().has_wall(wall)
+
+
+def test_cell_open_wall_clears_one_wall() -> None:
+    cell = Cell()
+
+    cell.open_wall(Wall.NORTH)
+
+    assert not cell.has_wall(Wall.NORTH)
+
+
+def test_cell_close_wall_sets_one_wall() -> None:
+    cell = Cell()
+    cell.open_wall(Wall.NORTH)
+
+    cell.close_wall(Wall.NORTH)
+
+    assert cell.has_wall(Wall.NORTH)
+
+
+def test_cell_open_wall_does_not_change_unrelated_walls() -> None:
+    cell = Cell()
+
+    cell.open_wall(Wall.NORTH)
+
+    assert cell.has_wall(Wall.EAST)
+    assert cell.has_wall(Wall.SOUTH)
+    assert cell.has_wall(Wall.WEST)
+
+
+def test_cell_close_wall_does_not_change_unrelated_walls() -> None:
+    cell = Cell()
+    cell.open_wall(Wall.NORTH)
+    cell.open_wall(Wall.EAST)
+
+    cell.close_wall(Wall.NORTH)
+
+    assert not cell.has_wall(Wall.EAST)
+    assert cell.has_wall(Wall.SOUTH)
+    assert cell.has_wall(Wall.WEST)
+
+
+@pytest.mark.parametrize(
+    "wall",
+    (
+        Wall.NORTH | Wall.EAST,
+        Wall(0),
+    ),
+)
+@pytest.mark.parametrize("method_name", ("has_wall", "open_wall", "close_wall"))
+def test_cell_wall_operations_reject_non_single_walls(
+    wall: Wall,
+    method_name: str,
+) -> None:
+    method = getattr(Cell(), method_name)
+
+    with pytest.raises(ValueError, match="single cardinal wall"):
+        method(wall)
