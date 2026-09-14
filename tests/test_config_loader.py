@@ -39,6 +39,10 @@ def test_default_config_contains_optional_seed() -> None:
     assert "SEED" in _config_entries()
 
 
+def test_default_config_uses_playable_mode_by_default() -> None:
+    assert _config_entries()["PERFECT"] == "False"
+
+
 def test_default_config_documents_seed_as_optional() -> None:
     comments = [line for line in _config_lines() if line.strip().startswith("#")]
 
