@@ -108,6 +108,13 @@ def test_cell_starts_with_all_walls_closed() -> None:
     assert Cell().walls == ALL_WALLS
 
 
+def test_cell_walls_are_read_only() -> None:
+    cell = Cell()
+
+    with pytest.raises(AttributeError):
+        setattr(cell, "walls", Wall(0))
+
+
 @pytest.mark.parametrize(
     "wall",
     (Wall.NORTH, Wall.EAST, Wall.SOUTH, Wall.WEST),
@@ -122,6 +129,7 @@ def test_cell_open_wall_clears_one_wall() -> None:
     cell.open_wall(Wall.NORTH)
 
     assert not cell.has_wall(Wall.NORTH)
+    assert cell.walls == ALL_WALLS & ~Wall.NORTH
 
 
 def test_cell_close_wall_sets_one_wall() -> None:
@@ -131,6 +139,7 @@ def test_cell_close_wall_sets_one_wall() -> None:
     cell.close_wall(Wall.NORTH)
 
     assert cell.has_wall(Wall.NORTH)
+    assert cell.walls == ALL_WALLS
 
 
 def test_cell_open_wall_does_not_change_unrelated_walls() -> None:

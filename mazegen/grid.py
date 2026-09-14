@@ -41,26 +41,35 @@ class Position:
         return Position(self.x + delta_x, self.y + delta_y)
 
 
-@dataclass(slots=True)
+@dataclass(init=False, slots=True)
 class Cell:
     """Maze cell storing its currently closed walls."""
 
-    walls: Wall = ALL_WALLS
+    _walls: Wall
+
+    def __init__(self) -> None:
+        """Create a cell with all walls closed."""
+        self._walls = ALL_WALLS
+
+    @property
+    def walls(self) -> Wall:
+        """Return the currently closed walls."""
+        return self._walls
 
     def has_wall(self, wall: Wall) -> bool:
         """Return whether the given cardinal wall is closed."""
         _validate_single_wall(wall)
-        return bool(self.walls & wall)
+        return bool(self._walls & wall)
 
     def open_wall(self, wall: Wall) -> None:
         """Open the given cardinal wall without changing other walls."""
         _validate_single_wall(wall)
-        self.walls &= ~wall
+        self._walls &= ~wall
 
     def close_wall(self, wall: Wall) -> None:
         """Close the given cardinal wall without changing other walls."""
         _validate_single_wall(wall)
-        self.walls |= wall
+        self._walls |= wall
 
 
 _OPPOSITE_WALLS: dict[Wall, Wall] = {
