@@ -1,6 +1,6 @@
 import pytest
 
-from mazegen.grid import ALL_WALLS, Cell, Grid, Position, Wall
+from mazegen.grid import ALL_WALLS, Cell, CellView, Grid, Position, Wall
 
 
 def test_wall_values_match_hexadecimal_encoding() -> None:
@@ -231,8 +231,8 @@ def test_grid_in_bounds_uses_public_xy_coordinates(
     assert Grid(2, 3).in_bounds(position) is expected
 
 
-def test_grid_cell_at_returns_cell_for_valid_position() -> None:
-    assert isinstance(Grid(2, 2).cell_at(Position(1, 1)), Cell)
+def test_grid_cell_at_returns_read_only_cell_view() -> None:
+    assert isinstance(Grid(2, 2).cell_at(Position(1, 1)), CellView)
 
 
 def test_grid_cell_at_rejects_out_of_bounds_position() -> None:
@@ -240,12 +240,53 @@ def test_grid_cell_at_rejects_out_of_bounds_position() -> None:
         Grid(2, 2).cell_at(Position(2, 0))
 
 
-def test_grid_cell_at_returns_same_cell_state_for_same_position() -> None:
+def test_grid_cell_at_view_reflects_same_cell_state() -> None:
     grid = Grid(2, 1)
+    cell_view = grid.cell_at(Position(0, 0))
 
-    grid.cell_at(Position(0, 0)).open_wall(Wall.EAST)
+    grid.open_wall(Position(0, 0), Wall.EAST)
 
-    assert not grid.cell_at(Position(0, 0)).has_wall(Wall.EAST)
+    assert not cell_view.has_wall(Wall.EAST)
+
+
+def test_grid_cell_at_view_exposes_walls_for_reading() -> None:
+    assert Grid(2, 2).cell_at(Position(0, 0)).walls == ALL_WALLS
+
+
+def test_grid_cell_at_view_rejects_walls_assignment() -> None:
+    cell_view = Grid(2, 2).cell_at(Position(0, 0))
+
+    with pytest.raises((AttributeError, TypeError)):
+        setattr(cell_view, "walls", Wall(0))
+
+
+@pytest.mark.parametrize("method_name", ("open_wall", "close_wall"))
+def test_grid_cell_at_view_does_not_expose_mutators(method_name: str) -> None:
+    cell_view = Grid(2, 2).cell_at(Position(0, 0))
+
+    with pytest.raises(AttributeError):
+        getattr(cell_view, method_name)
+
+
+def test_grid_cell_at_view_cannot_break_wall_symmetry() -> None:
+    grid = Grid(2, 1)
+    cell_view = grid.cell_at(Position(0, 0))
+
+    with pytest.raises(AttributeError):
+        getattr(cell_view, "open_wall")
+
+    assert grid.cell_at(Position(0, 0)).has_wall(Wall.EAST)
+    assert grid.cell_at(Position(1, 0)).has_wall(Wall.WEST)
+
+
+def test_grid_cell_at_view_cannot_open_external_borders() -> None:
+    grid = Grid(1, 1)
+    cell_view = grid.cell_at(Position(0, 0))
+
+    with pytest.raises(AttributeError):
+        getattr(cell_view, "open_wall")
+
+    assert grid.cell_at(Position(0, 0)).walls == ALL_WALLS
 
 
 def test_grid_neighbors_for_top_left_corner() -> None:

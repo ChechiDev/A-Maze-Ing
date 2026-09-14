@@ -72,6 +72,22 @@ class Cell:
         self._walls |= wall
 
 
+@dataclass(frozen=True, slots=True)
+class CellView:
+    """Read-only view of a cell inside a grid."""
+
+    _cell: Cell
+
+    @property
+    def walls(self) -> Wall:
+        """Return the currently closed walls."""
+        return self._cell.walls
+
+    def has_wall(self, wall: Wall) -> bool:
+        """Return whether the given cardinal wall is closed."""
+        return self._cell.has_wall(wall)
+
+
 class Grid:
     """Rectangular maze grid using public ``x,y`` coordinates."""
 
@@ -99,10 +115,9 @@ class Grid:
         """Return whether the public position is inside the grid."""
         return 0 <= position.x < self._width and 0 <= position.y < self._height
 
-    def cell_at(self, position: Position) -> Cell:
-        """Return the cell at the public position."""
-        self._ensure_in_bounds(position)
-        return self._cells[position.y][position.x]
+    def cell_at(self, position: Position) -> CellView:
+        """Return a read-only cell view at the public position."""
+        return CellView(self._mutable_cell_at(position))
 
     def neighbors(self, position: Position) -> tuple[tuple[Position, Wall], ...]:
         """Return in-bounds neighbor positions and the wall leading to each."""
@@ -120,8 +135,8 @@ class Grid:
         self._ensure_in_bounds(position)
         if not self.in_bounds(neighbor):
             raise ValueError("cannot open a wall outside the grid")
-        self.cell_at(position).open_wall(wall)
-        self.cell_at(neighbor).open_wall(wall.opposite)
+        self._mutable_cell_at(position).open_wall(wall)
+        self._mutable_cell_at(neighbor).open_wall(wall.opposite)
 
     def positions(self) -> tuple[Position, ...]:
         """Return all positions in row-major public ``x,y`` order."""
@@ -135,6 +150,11 @@ class Grid:
         """Raise a clear error if position is outside the grid."""
         if not self.in_bounds(position):
             raise ValueError("position is outside the grid")
+
+    def _mutable_cell_at(self, position: Position) -> Cell:
+        """Return the mutable cell at the public position for grid internals."""
+        self._ensure_in_bounds(position)
+        return self._cells[position.y][position.x]
 
 
 _OPPOSITE_WALLS: dict[Wall, Wall] = {
