@@ -1,0 +1,30 @@
+[project]
+name = "a-maze-ing"
+version = "0.1.0"
+description = "A reusable Python maze generator with hexadecimal wall encoding and terminal visualization."
+authors = [
+    { name = "sperez-l" },
+    { name = "crblanco" },
+]
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic>=2.0,<3.0",
+]
+
+[dependency-groups]
+dev = [
+    "flake8>=7.0,<8.0",
+    "mypy>=1.0,<2.0",
+    "pytest>=8.0,<9.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unused_configs = true
+warn_unreachable = true
