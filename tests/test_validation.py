@@ -82,6 +82,16 @@ def test_count_loops_returns_zero_for_empty_positions() -> None:
     assert count_loops(Grid(1, 1), set()) == 0
 
 
+def test_count_loops_returns_zero_for_out_of_bounds_position() -> None:
+    assert count_loops(Grid(1, 1), {Position(1, 0)}) == 0
+
+
+def test_count_loops_ignores_out_of_bounds_positions() -> None:
+    grid = Grid(1, 1)
+
+    assert count_loops(grid, {Position(0, 0), Position(1, 0)}) == 0
+
+
 def test_has_wall_coherence_returns_true_for_grid_opened_through_api() -> None:
     grid = Grid(2, 1)
     grid.open_wall(Position(0, 0), Wall.EAST)

@@ -36,10 +36,15 @@ def count_open_edges(grid: Grid, positions: set[Position]) -> int:
 
 def count_loops(grid: Grid, positions: set[Position]) -> int:
     """Return the number of independent loops in the position subgraph."""
-    if not positions:
+    valid_positions = _in_bounds_positions(grid, positions)
+    if not valid_positions:
         return 0
-    components = _count_connected_components(grid, positions)
-    return count_open_edges(grid, positions) - len(positions) + components
+    components = _count_connected_components(grid, valid_positions)
+    return (
+        count_open_edges(grid, valid_positions)
+        - len(valid_positions)
+        + components
+    )
 
 
 def is_connected(grid: Grid, positions: set[Position]) -> bool:
@@ -82,6 +87,10 @@ def _count_connected_components(grid: Grid, positions: set[Position]) -> int:
         remaining -= component
         components += 1
     return components
+
+
+def _in_bounds_positions(grid: Grid, positions: set[Position]) -> set[Position]:
+    return {position for position in positions if grid.in_bounds(position)}
 
 
 def _is_open_3x3_block(grid: Grid, top_left: Position) -> bool:
