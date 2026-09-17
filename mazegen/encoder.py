@@ -21,3 +21,20 @@ def encode_grid_row(grid: Grid, y: int) -> str:
 def encode_grid(grid: Grid) -> list[str]:
     """Return all encoded grid rows in row-major order."""
     return [encode_grid_row(grid, y) for y in range(grid.height)]
+
+
+def format_maze_output(
+    grid: Grid,
+    entry: Position,
+    exit: Position,
+    path: str,
+) -> str:
+    """Return the complete maze output content with a final newline."""
+    lines = [
+        *encode_grid(grid),
+        "",
+        f"{entry.x},{entry.y}",
+        f"{exit.x},{exit.y}",
+        path,
+    ]
+    return "\n".join(lines) + "\n"
