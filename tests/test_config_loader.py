@@ -1,5 +1,9 @@
 from pathlib import Path
 
+import pytest
+
+from ui.config_loader import parse_config_lines
+
 
 CONFIG_PATH = Path("config.txt")
 REQUIRED_KEYS = {
@@ -17,14 +21,7 @@ def _config_lines() -> list[str]:
 
 
 def _config_entries() -> dict[str, str]:
-    entries: dict[str, str] = {}
-    for line in _config_lines():
-        stripped_line = line.strip()
-        if not stripped_line or stripped_line.startswith("#"):
-            continue
-        key, value = stripped_line.split("=", maxsplit=1)
-        entries[key] = value
-    return entries
+    return parse_config_lines(_config_lines())
 
 
 def test_default_config_file_exists() -> None:
@@ -73,6 +70,54 @@ def test_default_config_entry_and_exit_use_public_xy_format() -> None:
 
     assert _is_xy_coordinate(entries["ENTRY"])
     assert _is_xy_coordinate(entries["EXIT"])
+
+
+def test_parse_config_lines_ignores_comments() -> None:
+    assert parse_config_lines(("# ignored", "WIDTH=10")) == {"WIDTH": "10"}
+
+
+def test_parse_config_lines_ignores_empty_lines() -> None:
+    assert parse_config_lines(("", "   ", "HEIGHT=10")) == {"HEIGHT": "10"}
+
+
+def test_parse_config_lines_trims_keys_and_values() -> None:
+    assert parse_config_lines((" WIDTH = 10 ",)) == {"WIDTH": "10"}
+
+
+def test_parse_config_lines_preserves_values_as_strings() -> None:
+    entries = parse_config_lines(("ENTRY=0,0", "PERFECT=False"))
+
+    assert entries["ENTRY"] == "0,0"
+    assert entries["PERFECT"] == "False"
+
+
+def test_parse_config_lines_rejects_line_without_separator() -> None:
+    with pytest.raises(ValueError, match="missing '='"):
+        parse_config_lines(("WIDTH",))
+
+
+def test_parse_config_lines_rejects_empty_key() -> None:
+    with pytest.raises(ValueError, match="empty key"):
+        parse_config_lines(("=10",))
+
+
+def test_parse_config_lines_preserves_empty_values() -> None:
+    assert parse_config_lines(("OUTPUT_FILE=",)) == {"OUTPUT_FILE": ""}
+
+
+def test_parse_config_lines_preserves_inline_comment_text() -> None:
+    entries = parse_config_lines(("OUTPUT_FILE=maze.txt # comment",))
+
+    assert entries["OUTPUT_FILE"] == "maze.txt # comment"
+
+
+def test_parse_config_lines_parses_default_config() -> None:
+    entries = parse_config_lines(_config_lines())
+
+    assert REQUIRED_KEYS <= entries.keys()
+    assert entries["PERFECT"] == "False"
+    assert entries["ENTRY"] == "0,0"
+    assert entries["EXIT"] == "9,9"
 
 
 def _is_xy_coordinate(value: str) -> bool:
