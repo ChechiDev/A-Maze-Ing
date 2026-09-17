@@ -1,8 +1,12 @@
 """Public generation data transfer objects for maze generation."""
 
 from dataclasses import dataclass
+from random import Random
 
 from mazegen.grid import Grid, Position
+from mazegen.solver import ShortestPathSolver
+from mazegen.strategies.backtracker import RecursiveBacktrackerStrategy
+from mazegen.strategies.base import GenerationStrategy
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,6 +43,33 @@ class MazeResult:
     exit: Position
     shortest_path: str
     warning: str | None = None
+
+
+class MazeGenerator:
+    """Reusable maze generation API."""
+
+    def __init__(
+        self,
+        strategy: GenerationStrategy | None = None,
+        solver: ShortestPathSolver | None = None,
+    ) -> None:
+        """Create a generator with injectable strategy and solver defaults."""
+        self._strategy = strategy or RecursiveBacktrackerStrategy()
+        self._solver = solver or ShortestPathSolver()
+
+    def generate(self, options: MazeOptions) -> MazeResult:
+        """Generate a maze result without performing any UI or file I/O."""
+        rng = Random(options.seed)
+        grid = Grid(options.width, options.height)
+        reserved: set[Position] = set()
+        self._strategy.generate(grid, rng, reserved)
+        shortest_path = self._solver.solve(grid, options.entry, options.exit)
+        return MazeResult(
+            grid=grid,
+            entry=options.entry,
+            exit=options.exit,
+            shortest_path=shortest_path,
+        )
 
 
 def _is_in_bounds(width: int, height: int, position: Position) -> bool:
