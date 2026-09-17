@@ -1,6 +1,15 @@
 import pytest
 from random import Random
 
+import mazegen
+from mazegen import (
+    MazeError,
+    MazeGenerator as PublicMazeGenerator,
+    MazeOptions as PublicMazeOptions,
+    MazeResult as PublicMazeResult,
+    Position as PublicPosition,
+    UnreachableExitError,
+)
 from mazegen.generator import MazeGenerator, MazeOptions, MazeResult
 from mazegen.grid import Grid, Position, Wall
 from mazegen.validation import (
@@ -183,6 +192,46 @@ def test_maze_generator_uses_injected_strategy() -> None:
     result = MazeGenerator(strategy=FakeStrategy()).generate(options)
 
     assert result.shortest_path == "E"
+
+
+def test_public_import_exposes_maze_generator() -> None:
+    assert PublicMazeGenerator.__name__ == "MazeGenerator"
+
+
+def test_public_imports_support_generating_maze_result() -> None:
+    options = PublicMazeOptions(
+        width=2,
+        height=2,
+        entry=PublicPosition(0, 0),
+        exit=PublicPosition(1, 1),
+        perfect=True,
+        seed=42,
+    )
+
+    result = PublicMazeGenerator().generate(options)
+
+    assert isinstance(result, PublicMazeResult)
+
+
+def test_public_import_exposes_exception_hierarchy() -> None:
+    assert issubclass(UnreachableExitError, MazeError)
+
+
+def test_public_all_contains_expected_names() -> None:
+    expected = {
+        "Grid",
+        "InvalidConfigurationError",
+        "InvalidMazeError",
+        "MazeError",
+        "MazeGenerator",
+        "MazeOptions",
+        "MazeResult",
+        "Position",
+        "UnreachableExitError",
+        "Wall",
+    }
+
+    assert expected <= set(mazegen.__all__)
 
 
 class FakeStrategy:
