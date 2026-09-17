@@ -1,8 +1,10 @@
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
-from ui.config_loader import parse_config_lines
+from mazegen.grid import Position
+from ui.config_loader import MazeConfig, parse_config_lines
 
 
 CONFIG_PATH = Path("config.txt")
@@ -14,6 +16,18 @@ REQUIRED_KEYS = {
     "OUTPUT_FILE",
     "PERFECT",
 }
+
+
+def _valid_config_entries() -> dict[str, str]:
+    return {
+        "WIDTH": "10",
+        "HEIGHT": "10",
+        "ENTRY": "0,0",
+        "EXIT": "9,9",
+        "OUTPUT_FILE": "maze.txt",
+        "PERFECT": "False",
+        "SEED": "42",
+    }
 
 
 def _config_lines() -> list[str]:
@@ -128,6 +142,137 @@ def test_parse_config_lines_parses_default_config() -> None:
     assert entries["PERFECT"] == "False"
     assert entries["ENTRY"] == "0,0"
     assert entries["EXIT"] == "9,9"
+
+
+def test_maze_config_accepts_uppercase_config_keys() -> None:
+    config = MazeConfig.model_validate(_valid_config_entries())
+
+    assert config.width == 10
+    assert config.height == 10
+    assert config.entry == Position(0, 0)
+    assert config.exit == Position(9, 9)
+    assert config.output_file == "maze.txt"
+    assert config.perfect is False
+    assert config.seed == 42
+
+
+def test_maze_config_accepts_missing_seed() -> None:
+    entries = _valid_config_entries()
+    del entries["SEED"]
+
+    assert MazeConfig.model_validate(entries).seed is None
+
+
+@pytest.mark.parametrize(
+    "missing_key",
+    ("WIDTH", "HEIGHT", "ENTRY", "EXIT", "OUTPUT_FILE", "PERFECT"),
+)
+def test_maze_config_rejects_missing_required_keys(missing_key: str) -> None:
+    entries = _valid_config_entries()
+    del entries[missing_key]
+
+    with pytest.raises(ValidationError):
+        MazeConfig.model_validate(entries)
+
+
+@pytest.mark.parametrize(
+    ("key", "value"),
+    (
+        ("WIDTH", "0"),
+        ("HEIGHT", "0"),
+        ("WIDTH", "abc"),
+    ),
+)
+def test_maze_config_rejects_invalid_dimensions(key: str, value: str) -> None:
+    entries = _valid_config_entries()
+    entries[key] = value
+
+    with pytest.raises(ValidationError):
+        MazeConfig.model_validate(entries)
+
+
+@pytest.mark.parametrize(
+    ("key", "value"),
+    (
+        ("ENTRY", "10,0"),
+        ("EXIT", "0,10"),
+    ),
+)
+def test_maze_config_rejects_coordinates_outside_bounds(
+    key: str,
+    value: str,
+) -> None:
+    entries = _valid_config_entries()
+    entries[key] = value
+
+    with pytest.raises(ValidationError, match="inside the maze bounds"):
+        MazeConfig.model_validate(entries)
+
+
+def test_maze_config_rejects_equal_entry_and_exit() -> None:
+    entries = _valid_config_entries()
+    entries["EXIT"] = "0,0"
+
+    with pytest.raises(ValidationError, match="must be different"):
+        MazeConfig.model_validate(entries)
+
+
+def test_maze_config_rejects_empty_output_file() -> None:
+    entries = _valid_config_entries()
+    entries["OUTPUT_FILE"] = ""
+
+    with pytest.raises(ValidationError):
+        MazeConfig.model_validate(entries)
+
+
+def test_maze_config_rejects_blank_output_file() -> None:
+    entries = _valid_config_entries()
+    entries["OUTPUT_FILE"] = "   "
+
+    with pytest.raises(ValidationError, match="OUTPUT_FILE must not be empty"):
+        MazeConfig.model_validate(entries)
+
+
+@pytest.mark.parametrize("value", ("True", "False", "true", "false"))
+def test_maze_config_accepts_explicit_boolean_values(value: str) -> None:
+    entries = _valid_config_entries()
+    entries["PERFECT"] = value
+
+    assert isinstance(MazeConfig.model_validate(entries).perfect, bool)
+
+
+@pytest.mark.parametrize("value", ("maybe", "False # comment"))
+def test_maze_config_rejects_invalid_boolean_values(value: str) -> None:
+    entries = _valid_config_entries()
+    entries["PERFECT"] = value
+
+    with pytest.raises(ValidationError, match="PERFECT must be True or False"):
+        MazeConfig.model_validate(entries)
+
+
+def test_maze_config_rejects_invalid_seed() -> None:
+    entries = _valid_config_entries()
+    entries["SEED"] = "abc"
+
+    with pytest.raises(ValidationError):
+        MazeConfig.model_validate(entries)
+
+
+@pytest.mark.parametrize("value", ("1", "1,2,3", "a,b"))
+def test_maze_config_rejects_invalid_entry_format(value: str) -> None:
+    entries = _valid_config_entries()
+    entries["ENTRY"] = value
+
+    with pytest.raises(ValidationError):
+        MazeConfig.model_validate(entries)
+
+
+def test_maze_config_rejects_unknown_keys() -> None:
+    entries = _valid_config_entries()
+    entries["UNKNOWN"] = "value"
+
+    with pytest.raises(ValidationError):
+        MazeConfig.model_validate(entries)
 
 
 def _is_xy_coordinate(value: str) -> bool:

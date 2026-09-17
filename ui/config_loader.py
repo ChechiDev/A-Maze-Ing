@@ -1,6 +1,80 @@
 """Configuration parsing helpers for the application layer."""
 
 from collections.abc import Iterable
+from typing import Self
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from mazegen.grid import Position
+
+
+class MazeConfig(BaseModel):
+    """Validated maze configuration loaded from KEY=VALUE settings."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid")
+
+    width: int = Field(alias="WIDTH", gt=0)
+    height: int = Field(alias="HEIGHT", gt=0)
+    entry: Position = Field(alias="ENTRY")
+    exit: Position = Field(alias="EXIT")
+    output_file: str = Field(alias="OUTPUT_FILE", min_length=1)
+    perfect: bool = Field(alias="PERFECT")
+    seed: int | None = Field(default=None, alias="SEED")
+
+    @field_validator("entry", "exit", mode="before")
+    @classmethod
+    def _parse_position(cls, value: object) -> Position:
+        """Parse a public x,y coordinate into a Position."""
+        if isinstance(value, Position):
+            return value
+        if not isinstance(value, str):
+            raise ValueError("coordinate must use x,y format")
+        parts = [part.strip() for part in value.split(",")]
+        if len(parts) != 2:
+            raise ValueError("coordinate must use x,y format")
+        try:
+            x, y = (int(part) for part in parts)
+        except ValueError as error:
+            raise ValueError("coordinate must contain integer values") from error
+        return Position(x, y)
+
+    @field_validator("perfect", mode="before")
+    @classmethod
+    def _parse_bool(cls, value: object) -> bool:
+        """Parse explicit True/False strings into booleans."""
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            normalized_value = value.strip().lower()
+            if normalized_value == "true":
+                return True
+            if normalized_value == "false":
+                return False
+        raise ValueError("PERFECT must be True or False")
+
+    @field_validator("output_file")
+    @classmethod
+    def _validate_output_file(cls, value: str) -> str:
+        """Validate and normalize the output file path value."""
+        stripped_value = value.strip()
+        if not stripped_value:
+            raise ValueError("OUTPUT_FILE must not be empty")
+        return stripped_value
+
+    @model_validator(mode="after")
+    def _validate_positions(self) -> Self:
+        """Validate entry and exit against configured grid bounds."""
+        if not self._in_bounds(self.entry):
+            raise ValueError("ENTRY must be inside the maze bounds")
+        if not self._in_bounds(self.exit):
+            raise ValueError("EXIT must be inside the maze bounds")
+        if self.entry == self.exit:
+            raise ValueError("ENTRY and EXIT must be different")
+        return self
+
+    def _in_bounds(self, position: Position) -> bool:
+        """Return whether a position is inside configured bounds."""
+        return 0 <= position.x < self.width and 0 <= position.y < self.height
 
 
 def parse_config_lines(lines: Iterable[str]) -> dict[str, str]:
