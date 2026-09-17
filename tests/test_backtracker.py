@@ -66,6 +66,25 @@ def test_recursive_backtracker_keeps_reserved_cell_closed() -> None:
     assert has_wall_coherence(grid)
 
 
+def test_recursive_backtracker_visits_disconnected_transitable_components() -> None:
+    grid = Grid(3, 3)
+    reserved = {Position(1, 0), Position(1, 1), Position(1, 2)}
+    transitables = _transitable_positions(grid, reserved)
+    left = {Position(0, y) for y in range(3)}
+    right = {Position(2, y) for y in range(3)}
+
+    RecursiveBacktrackerStrategy().generate(grid, Random(42), reserved)
+
+    for position in reserved:
+        _assert_all_walls_closed_for_position(grid, position)
+    assert is_connected(grid, left)
+    assert is_connected(grid, right)
+    assert not is_connected(grid, transitables)
+    assert count_open_edges(grid, transitables) == len(transitables) - 2
+    assert count_loops(grid, transitables) == 0
+    assert has_wall_coherence(grid)
+
+
 def test_recursive_backtracker_returns_unchanged_grid_when_all_reserved() -> None:
     grid = Grid(2, 2)
     reserved = set(grid.positions())

@@ -16,27 +16,32 @@ class RecursiveBacktrackerStrategy:
     ) -> Grid:
         """Open walls to connect every non-reserved position as a tree."""
         transitables = _transitable_positions(grid, reserved)
-        if len(transitables) < 2:
-            return grid
+        unvisited = set(transitables)
 
-        start = rng.choice(sorted(transitables, key=lambda position: (
-            position.y,
-            position.x,
-        )))
-        visited = {start}
-        stack = [start]
+        while unvisited:
+            start = rng.choice(sorted(unvisited, key=lambda position: (
+                position.y,
+                position.x,
+            )))
+            unvisited.remove(start)
+            stack = [start]
 
-        while stack:
-            current = stack[-1]
-            candidates = _unvisited_neighbors(grid, current, transitables, visited)
-            if not candidates:
-                stack.pop()
-                continue
+            while stack:
+                current = stack[-1]
+                candidates = _unvisited_neighbors(
+                    grid,
+                    current,
+                    transitables,
+                    unvisited,
+                )
+                if not candidates:
+                    stack.pop()
+                    continue
 
-            neighbor, wall = rng.choice(candidates)
-            grid.open_wall(current, wall)
-            visited.add(neighbor)
-            stack.append(neighbor)
+                neighbor, wall = rng.choice(candidates)
+                grid.open_wall(current, wall)
+                unvisited.remove(neighbor)
+                stack.append(neighbor)
 
         return grid
 
@@ -49,10 +54,10 @@ def _unvisited_neighbors(
     grid: Grid,
     position: Position,
     transitables: set[Position],
-    visited: set[Position],
+    unvisited: set[Position],
 ) -> list[tuple[Position, Wall]]:
     return [
         (neighbor, wall)
         for neighbor, wall in grid.neighbors(position)
-        if neighbor in transitables and neighbor not in visited
+        if neighbor in transitables and neighbor in unvisited
     ]
