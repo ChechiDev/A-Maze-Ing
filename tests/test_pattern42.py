@@ -1,7 +1,7 @@
 import pytest
 
 from mazegen.grid import Position
-from mazegen.pattern42 import build_pattern42_positions
+from mazegen.pattern42 import build_pattern42_positions, pattern42_overlaps
 
 
 def test_pattern42_returns_positions_for_minimum_size() -> None:
@@ -65,3 +65,21 @@ def test_pattern42_rejects_non_positive_width() -> None:
 def test_pattern42_rejects_non_positive_height() -> None:
     with pytest.raises(ValueError, match="height"):
         build_pattern42_positions(11, 0)
+
+
+def test_pattern42_overlaps_returns_true_for_entry_overlap() -> None:
+    positions = build_pattern42_positions(11, 7).positions
+
+    assert pattern42_overlaps(positions, Position(0, 0), Position(1, 1))
+
+
+def test_pattern42_overlaps_returns_true_for_exit_overlap() -> None:
+    positions = build_pattern42_positions(11, 7).positions
+
+    assert pattern42_overlaps(positions, Position(1, 1), Position(10, 6))
+
+
+def test_pattern42_overlaps_returns_false_without_overlap() -> None:
+    positions = build_pattern42_positions(11, 7).positions
+
+    assert not pattern42_overlaps(positions, Position(1, 1), Position(2, 1))

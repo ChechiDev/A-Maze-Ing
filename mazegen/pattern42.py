@@ -32,6 +32,15 @@ def build_pattern42_positions(width: int, height: int) -> Pattern42Result:
     )
 
 
+def pattern42_overlaps(
+    positions: frozenset[Position],
+    entry: Position,
+    exit: Position,
+) -> bool:
+    """Return whether the 42 pattern overlaps entry or exit."""
+    return entry in positions or exit in positions
+
+
 _PATTERN_42_MASK: tuple[str, ...] = (
     "10001011111",
     "10001000001",
