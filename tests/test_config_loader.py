@@ -101,6 +101,16 @@ def test_parse_config_lines_rejects_empty_key() -> None:
         parse_config_lines(("=10",))
 
 
+def test_parse_config_lines_rejects_duplicate_keys() -> None:
+    with pytest.raises(ValueError, match="duplicate key 'WIDTH'"):
+        parse_config_lines(("WIDTH=10", "WIDTH=20"))
+
+
+def test_parse_config_lines_rejects_duplicate_keys_after_trim() -> None:
+    with pytest.raises(ValueError, match="duplicate key 'WIDTH'"):
+        parse_config_lines((" WIDTH = 10", "WIDTH=20"))
+
+
 def test_parse_config_lines_preserves_empty_values() -> None:
     assert parse_config_lines(("OUTPUT_FILE=",)) == {"OUTPUT_FILE": ""}
 

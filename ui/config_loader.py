@@ -11,6 +11,11 @@ def parse_config_lines(lines: Iterable[str]) -> dict[str, str]:
         if not stripped_line or stripped_line.startswith("#"):
             continue
         key, value = _parse_config_line(stripped_line, line_number)
+        if key in entries:
+            raise ValueError(
+                f"invalid config syntax on line {line_number}: "
+                f"duplicate key '{key}'"
+            )
         entries[key] = value
     return entries
 
