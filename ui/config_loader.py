@@ -1,9 +1,17 @@
 """Configuration parsing helpers for the application layer."""
 
 from collections.abc import Iterable
+from pathlib import Path
 from typing import Self
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 from mazegen.grid import Position
 
@@ -92,6 +100,39 @@ def parse_config_lines(lines: Iterable[str]) -> dict[str, str]:
             )
         entries[key] = value
     return entries
+
+
+def load_config(path: str | Path) -> MazeConfig:
+    """Load and validate a maze configuration file."""
+    config_path = Path(path)
+    try:
+        entries = parse_config_lines(_read_config_lines(config_path))
+        return MazeConfig.model_validate(entries)
+    except ValidationError as error:
+        message = _validation_error_message(error)
+        raise ValueError(f"invalid configuration: {message}") from error
+    except OSError as error:
+        message = _file_error_message(config_path, error)
+        raise ValueError(message) from error
+
+
+def _read_config_lines(path: Path) -> list[str]:
+    """Read configuration file lines as UTF-8 text."""
+    return path.read_text(encoding="utf-8").splitlines()
+
+
+def _validation_error_message(error: ValidationError) -> str:
+    """Return a compact human-readable Pydantic validation message."""
+    first_error = error.errors()[0]
+    location = ".".join(str(part) for part in first_error["loc"])
+    return f"{location}: {first_error['msg']}"
+
+
+def _file_error_message(path: Path, error: OSError) -> str:
+    """Return a clear message for configuration file read failures."""
+    if isinstance(error, FileNotFoundError):
+        return f"configuration file not found: {path}"
+    return f"could not read configuration file {path}: {error}"
 
 
 def _parse_config_line(line: str, line_number: int) -> tuple[str, str]:

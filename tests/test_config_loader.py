@@ -4,7 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from mazegen.grid import Position
-from ui.config_loader import MazeConfig, parse_config_lines
+from ui.config_loader import MazeConfig, load_config, parse_config_lines
 
 
 CONFIG_PATH = Path("config.txt")
@@ -28,6 +28,12 @@ def _valid_config_entries() -> dict[str, str]:
         "PERFECT": "False",
         "SEED": "42",
     }
+
+
+def _valid_config_text() -> str:
+    return "\n".join(
+        f"{key}={value}" for key, value in _valid_config_entries().items()
+    )
 
 
 def _config_lines() -> list[str]:
@@ -273,6 +279,68 @@ def test_maze_config_rejects_unknown_keys() -> None:
 
     with pytest.raises(ValidationError):
         MazeConfig.model_validate(entries)
+
+
+def test_load_config_loads_default_config() -> None:
+    config = load_config("config.txt")
+
+    assert isinstance(config, MazeConfig)
+    assert config.width == 10
+    assert config.perfect is False
+
+
+def test_load_config_accepts_path_object(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.txt"
+    config_path.write_text(_valid_config_text(), encoding="utf-8")
+
+    assert load_config(config_path).entry == Position(0, 0)
+
+
+def test_load_config_rejects_missing_file(tmp_path: Path) -> None:
+    missing_path = tmp_path / "missing.txt"
+
+    with pytest.raises(ValueError, match="configuration file.*not found"):
+        load_config(missing_path)
+
+
+def test_load_config_rejects_bad_syntax(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.txt"
+    config_path.write_text("WIDTH\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="missing '='"):
+        load_config(config_path)
+
+
+def test_load_config_rejects_invalid_width(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.txt"
+    config_path.write_text(
+        _valid_config_text().replace("WIDTH=10", "WIDTH=0"),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="invalid configuration"):
+        load_config(config_path)
+
+
+def test_load_config_rejects_unknown_key(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.txt"
+    config_path.write_text(_valid_config_text() + "\nUNKNOWN=value", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="invalid configuration"):
+        load_config(config_path)
+
+
+def test_load_config_rejects_inline_comment_when_value_is_invalid(
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "config.txt"
+    config_path.write_text(
+        _valid_config_text().replace("PERFECT=False", "PERFECT=False # comment"),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="PERFECT must be True or False"):
+        load_config(config_path)
 
 
 def _is_xy_coordinate(value: str) -> bool:
