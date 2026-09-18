@@ -3,7 +3,9 @@
 from dataclasses import dataclass
 from random import Random
 
+from mazegen.exceptions import InvalidConfigurationError
 from mazegen.grid import Grid, Position
+from mazegen.pattern42 import build_pattern42_positions, pattern42_overlaps
 from mazegen.solver import ShortestPathSolver
 from mazegen.strategies.backtracker import RecursiveBacktrackerStrategy
 from mazegen.strategies.base import GenerationStrategy
@@ -61,7 +63,12 @@ class MazeGenerator:
         """Generate a maze result without performing any UI or file I/O."""
         rng = Random(options.seed)
         grid = Grid(options.width, options.height)
-        reserved: set[Position] = set()
+        pattern = build_pattern42_positions(options.width, options.height)
+        if pattern42_overlaps(pattern.positions, options.entry, options.exit):
+            raise InvalidConfigurationError(
+                "entry or exit overlaps pattern 42"
+            )
+        reserved = set(pattern.positions)
         self._strategy.generate(grid, rng, reserved)
         shortest_path = self._solver.solve(grid, options.entry, options.exit)
         return MazeResult(
@@ -69,6 +76,7 @@ class MazeGenerator:
             entry=options.entry,
             exit=options.exit,
             shortest_path=shortest_path,
+            warning=pattern.warning,
         )
 
 

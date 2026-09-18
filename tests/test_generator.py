@@ -10,8 +10,10 @@ from mazegen import (
     Position as PublicPosition,
     UnreachableExitError,
 )
+from mazegen.exceptions import InvalidConfigurationError
 from mazegen.generator import MazeGenerator, MazeOptions, MazeResult
-from mazegen.grid import Grid, Position, Wall
+from mazegen.grid import ALL_WALLS, Grid, Position, Wall
+from mazegen.pattern42 import build_pattern42_positions
 from mazegen.validation import (
     count_loops,
     count_open_edges,
@@ -154,7 +156,7 @@ def test_maze_generator_generates_valid_result() -> None:
     assert isinstance(result.grid, Grid)
     assert result.entry == options.entry
     assert result.exit == options.exit
-    assert result.warning is None
+    assert result.warning == "grid is too small for pattern 42"
     assert set(result.shortest_path) <= set("NESW")
     assert is_connected(result.grid, positions)
     assert count_open_edges(result.grid, positions) == len(positions) - 1
@@ -192,6 +194,75 @@ def test_maze_generator_uses_injected_strategy() -> None:
     result = MazeGenerator(strategy=FakeStrategy()).generate(options)
 
     assert result.shortest_path == "E"
+
+
+def test_maze_generator_applies_pattern42_when_size_allows() -> None:
+    options = MazeOptions(
+        width=25,
+        height=20,
+        entry=Position(0, 0),
+        exit=Position(24, 19),
+        perfect=True,
+        seed=42,
+    )
+
+    result = MazeGenerator().generate(options)
+    pattern = build_pattern42_positions(25, 20).positions
+    transitables = set(result.grid.positions()) - set(pattern)
+
+    assert result.warning is None
+    assert pattern
+    assert all(
+        result.grid.cell_at(position).walls == ALL_WALLS
+        for position in pattern
+    )
+    assert count_open_edges(result.grid, set(pattern)) == 0
+    assert is_connected(result.grid, transitables)
+    assert count_open_edges(result.grid, transitables) == len(transitables) - 1
+    assert count_loops(result.grid, transitables) == 0
+
+
+def test_maze_generator_omits_pattern42_when_too_small() -> None:
+    options = MazeOptions(
+        width=10,
+        height=7,
+        entry=Position(0, 0),
+        exit=Position(9, 6),
+        perfect=True,
+        seed=42,
+    )
+
+    result = MazeGenerator().generate(options)
+
+    assert result.warning is not None
+    assert "too small" in result.warning
+    assert is_connected(result.grid, set(result.grid.positions()))
+
+
+def test_maze_generator_rejects_entry_overlapping_pattern42() -> None:
+    options = MazeOptions(
+        width=11,
+        height=7,
+        entry=Position(0, 0),
+        exit=Position(1, 1),
+        perfect=True,
+    )
+
+    with pytest.raises(InvalidConfigurationError, match="overlaps pattern 42"):
+        MazeGenerator().generate(options)
+
+
+def test_maze_generator_rejects_exit_overlapping_pattern42() -> None:
+    options = MazeOptions(
+        width=11,
+        height=7,
+        entry=Position(1, 1),
+        exit=Position(10, 6),
+        perfect=True,
+    )
+
+    with pytest.raises(InvalidConfigurationError, match="overlaps pattern 42"):
+        MazeGenerator().generate(options)
 
 
 def test_public_import_exposes_maze_generator() -> None:
