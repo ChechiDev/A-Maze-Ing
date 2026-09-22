@@ -17,15 +17,14 @@ from mazegen.modes.playable import (
 
 
 def test_playable_mode_connected_contract_accepts_connected_base() -> None:
-    grid = Grid(2, 1)
-    grid.open_wall(Position(0, 0), Wall.EAST)
+    grid = _connected_tree_grid_3x3()
 
     result = PlayableMode().apply(
         grid,
         Random(42),
         set(),
         Position(0, 0),
-        Position(1, 0),
+        Position(2, 2),
     )
 
     assert result is grid
@@ -33,32 +32,29 @@ def test_playable_mode_connected_contract_accepts_connected_base() -> None:
 
 def test_playable_mode_connected_contract_satisfies_maze_mode() -> None:
     mode: MazeMode = PlayableMode()
-    grid = Grid(2, 1)
-    grid.open_wall(Position(0, 0), Wall.EAST)
+    grid = _connected_tree_grid_3x3()
 
     assert mode.apply(
         grid,
         Random(42),
         set(),
         Position(0, 0),
-        Position(1, 0),
+        Position(2, 2),
     ) is grid
 
 
-def test_playable_mode_connected_contract_does_not_modify_grid() -> None:
-    grid = Grid(2, 1)
-    grid.open_wall(Position(0, 0), Wall.EAST)
-    before = _wall_signature(grid)
+def test_playable_mode_connected_contract_keeps_base_reachable() -> None:
+    grid = _connected_tree_grid_3x3()
 
     PlayableMode().apply(
         grid,
         Random(42),
         set(),
         Position(0, 0),
-        Position(1, 0),
+        Position(2, 2),
     )
 
-    assert _wall_signature(grid) == before
+    assert count_playable_loops(grid, set(grid.positions())) >= 2
 
 
 def test_playable_mode_connected_contract_rejects_disconnected_cells() -> None:
@@ -90,19 +86,14 @@ def test_playable_mode_connected_contract_excludes_reserved_cells() -> None:
 
 
 def test_playable_mode_connected_contract_accepts_reserved_closed_cell() -> None:
-    grid = Grid(3, 2)
-    grid.open_wall(Position(0, 0), Wall.EAST)
-    grid.open_wall(Position(1, 0), Wall.EAST)
-    grid.open_wall(Position(0, 0), Wall.SOUTH)
-    grid.open_wall(Position(0, 1), Wall.EAST)
-    grid.open_wall(Position(2, 0), Wall.SOUTH)
+    grid = _connected_tree_grid_4x4_with_reserved_cell()
 
     result = PlayableMode().apply(
         grid,
         Random(42),
         {Position(1, 1)},
         Position(0, 0),
-        Position(2, 0),
+        Position(3, 3),
     )
 
     assert result is grid
@@ -131,6 +122,70 @@ def test_playable_mode_connected_contract_rejects_exit_in_reserved() -> None:
             grid,
             Random(42),
             {Position(1, 0)},
+            Position(0, 0),
+            Position(1, 0),
+        )
+
+
+def test_playable_mode_loops_creates_at_least_two_loops() -> None:
+    grid = _connected_tree_grid_3x3()
+
+    PlayableMode().apply(
+        grid,
+        Random(42),
+        set(),
+        Position(0, 0),
+        Position(2, 2),
+    )
+
+    assert count_playable_loops(grid, set(grid.positions())) >= 2
+
+
+def test_playable_mode_loops_are_deterministic_with_seed() -> None:
+    first = _connected_tree_grid_3x3()
+    second = _connected_tree_grid_3x3()
+
+    PlayableMode().apply(
+        first,
+        Random(42),
+        set(),
+        Position(0, 0),
+        Position(2, 2),
+    )
+    PlayableMode().apply(
+        second,
+        Random(42),
+        set(),
+        Position(0, 0),
+        Position(2, 2),
+    )
+
+    assert _wall_signature(first) == _wall_signature(second)
+
+
+def test_playable_mode_loops_do_not_open_walls_to_reserved_cells() -> None:
+    grid = _connected_tree_grid_4x4_with_reserved_cell()
+
+    PlayableMode().apply(
+        grid,
+        Random(42),
+        {Position(1, 1)},
+        Position(0, 0),
+        Position(3, 3),
+    )
+
+    assert _open_edges_touching_reserved(grid, {Position(1, 1)}) == set()
+
+
+def test_playable_mode_loops_rejects_when_two_loops_are_impossible() -> None:
+    grid = Grid(2, 1)
+    grid.open_wall(Position(0, 0), Wall.EAST)
+
+    with pytest.raises(InvalidMazeError, match="two loops"):
+        PlayableMode().apply(
+            grid,
+            Random(42),
+            set(),
             Position(0, 0),
             Position(1, 0),
         )
@@ -265,3 +320,57 @@ def _wall_signature(grid: Grid) -> tuple[tuple[int, ...], ...]:
         tuple(int(grid.cell_at(Position(x, y)).walls) for x in range(grid.width))
         for y in range(grid.height)
     )
+
+
+def _connected_tree_grid_3x3() -> Grid:
+    grid = Grid(3, 3)
+    grid.open_wall(Position(0, 0), Wall.EAST)
+    grid.open_wall(Position(1, 0), Wall.EAST)
+    grid.open_wall(Position(2, 0), Wall.SOUTH)
+    grid.open_wall(Position(2, 1), Wall.SOUTH)
+    grid.open_wall(Position(2, 2), Wall.WEST)
+    grid.open_wall(Position(1, 2), Wall.WEST)
+    grid.open_wall(Position(0, 2), Wall.NORTH)
+    grid.open_wall(Position(0, 1), Wall.EAST)
+    return grid
+
+
+def _open_perimeter_tree_around_center(grid: Grid) -> None:
+    grid.open_wall(Position(0, 0), Wall.EAST)
+    grid.open_wall(Position(1, 0), Wall.EAST)
+    grid.open_wall(Position(2, 0), Wall.SOUTH)
+    grid.open_wall(Position(2, 1), Wall.SOUTH)
+    grid.open_wall(Position(2, 2), Wall.WEST)
+    grid.open_wall(Position(1, 2), Wall.WEST)
+    grid.open_wall(Position(0, 2), Wall.NORTH)
+
+
+def _connected_tree_grid_4x4_with_reserved_cell() -> Grid:
+    grid = Grid(4, 4)
+    grid.open_wall(Position(0, 0), Wall.EAST)
+    grid.open_wall(Position(1, 0), Wall.EAST)
+    grid.open_wall(Position(2, 0), Wall.EAST)
+    grid.open_wall(Position(3, 0), Wall.SOUTH)
+    grid.open_wall(Position(3, 1), Wall.SOUTH)
+    grid.open_wall(Position(3, 2), Wall.SOUTH)
+    grid.open_wall(Position(3, 3), Wall.WEST)
+    grid.open_wall(Position(2, 3), Wall.WEST)
+    grid.open_wall(Position(1, 3), Wall.WEST)
+    grid.open_wall(Position(0, 3), Wall.NORTH)
+    grid.open_wall(Position(0, 2), Wall.NORTH)
+    grid.open_wall(Position(2, 1), Wall.SOUTH)
+    grid.open_wall(Position(2, 2), Wall.WEST)
+    grid.open_wall(Position(1, 2), Wall.WEST)
+    return grid
+
+
+def _open_edges_touching_reserved(
+    grid: Grid,
+    reserved: set[Position],
+) -> set[tuple[Position, Position]]:
+    edges = set()
+    for position in reserved:
+        for neighbor, wall in grid.neighbors(position):
+            if not grid.cell_at(position).has_wall(wall):
+                edges.add((position, neighbor))
+    return edges

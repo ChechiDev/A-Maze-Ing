@@ -29,6 +29,12 @@ class PlayableMode:
             raise InvalidMazeError("entry and exit must be reachable")
         if playable_positions(grid, reserved) - reachable:
             raise InvalidMazeError("playable maze cells must be connected")
+        _ensure_minimum_loops(
+            grid,
+            rng,
+            playable_positions(grid, reserved),
+            2,
+        )
         return grid
 
 
@@ -178,6 +184,54 @@ def _count_playable_components(
         remaining -= _reachable_within_playable(grid, start, playable_positions)
         components += 1
     return components
+
+
+def _ensure_minimum_loops(
+    grid: Grid,
+    rng: Random,
+    playable_positions: set[Position],
+    minimum_loops: int,
+) -> None:
+    candidates = _internal_wall_candidates(grid, playable_positions)
+    rng.shuffle(candidates)
+    for position, wall in candidates:
+        if count_playable_loops(grid, playable_positions) >= minimum_loops:
+            return
+        if _can_open_playable_wall(grid, position, wall, playable_positions):
+            grid.open_wall(position, wall)
+
+    if count_playable_loops(grid, playable_positions) < minimum_loops:
+        raise InvalidMazeError("playable maze requires at least two loops")
+
+
+def _internal_wall_candidates(
+    grid: Grid,
+    playable_positions: set[Position],
+) -> list[tuple[Position, Wall]]:
+    candidates: list[tuple[Position, Wall]] = []
+    for position in playable_positions:
+        for neighbor, wall in grid.neighbors(position):
+            if neighbor not in playable_positions:
+                continue
+            if (neighbor.x, neighbor.y) < (position.x, position.y):
+                continue
+            candidates.append((position, wall))
+    return candidates
+
+
+def _can_open_playable_wall(
+    grid: Grid,
+    position: Position,
+    wall: Wall,
+    playable_positions: set[Position],
+) -> bool:
+    neighbor = position.move(wall)
+    return (
+        position in playable_positions
+        and grid.in_bounds(neighbor)
+        and neighbor in playable_positions
+        and grid.cell_at(position).has_wall(wall)
+    )
 
 
 def _reachable_within_playable(
