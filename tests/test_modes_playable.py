@@ -44,6 +44,34 @@ def test_count_playable_loops_detects_known_loop() -> None:
     assert count_playable_loops(grid, set(grid.positions())) == 1
 
 
+def test_count_playable_loops_does_not_traverse_non_playable_bridge() -> None:
+    grid = Grid(3, 1)
+    grid.open_wall(Position(0, 0), Wall.EAST)
+    grid.open_wall(Position(1, 0), Wall.EAST)
+
+    assert count_playable_loops(
+        grid,
+        {Position(0, 0), Position(2, 0)},
+    ) == 0
+
+
+def test_count_playable_loops_returns_zero_for_disconnected_tree_components() -> None:
+    grid = Grid(4, 1)
+    grid.open_wall(Position(0, 0), Wall.EAST)
+    grid.open_wall(Position(2, 0), Wall.EAST)
+
+    assert count_playable_loops(grid, set(grid.positions())) == 0
+
+
+def test_count_playable_loops_ignores_out_of_bounds_positions() -> None:
+    grid = Grid(1, 1)
+
+    assert count_playable_loops(
+        grid,
+        {Position(0, 0), Position(99, 99)},
+    ) == 0
+
+
 def test_reachable_corners_returns_only_reached_corners() -> None:
     grid = Grid(2, 2)
     grid.open_wall(Position(0, 0), Wall.EAST)

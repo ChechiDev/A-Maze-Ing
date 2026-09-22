@@ -1,7 +1,6 @@
 """Validation helpers for playable maze mode."""
 
 from mazegen.grid import Grid, Position, Wall
-from mazegen.validation import count_loops
 
 
 def playable_positions(grid: Grid, reserved: set[Position]) -> set[Position]:
@@ -36,7 +35,14 @@ def count_playable_loops(
     playable_positions: set[Position],
 ) -> int:
     """Count independent loops inside playable positions."""
-    return count_loops(grid, playable_positions)
+    valid_positions = _in_bounds_playable_positions(grid, playable_positions)
+    if not valid_positions:
+        return 0
+    return (
+        _count_open_playable_edges(grid, valid_positions)
+        - len(valid_positions)
+        + _count_playable_components(grid, valid_positions)
+    )
 
 
 def find_dead_ends(
@@ -113,6 +119,57 @@ def _open_playable_degree(
     if position not in playable_positions or not grid.in_bounds(position):
         return 0
     return len(_open_playable_neighbors(grid, position, playable_positions))
+
+
+def _in_bounds_playable_positions(
+    grid: Grid,
+    playable_positions: set[Position],
+) -> set[Position]:
+    return {position for position in playable_positions if grid.in_bounds(position)}
+
+
+def _count_open_playable_edges(
+    grid: Grid,
+    playable_positions: set[Position],
+) -> int:
+    edges = 0
+    for position in playable_positions:
+        edges += len(_open_playable_neighbors(grid, position, playable_positions))
+    return edges // 2
+
+
+def _count_playable_components(
+    grid: Grid,
+    playable_positions: set[Position],
+) -> int:
+    remaining = set(playable_positions)
+    components = 0
+    while remaining:
+        start = next(iter(remaining))
+        remaining -= _reachable_within_playable(grid, start, playable_positions)
+        components += 1
+    return components
+
+
+def _reachable_within_playable(
+    grid: Grid,
+    start: Position,
+    playable_positions: set[Position],
+) -> set[Position]:
+    pending = [start]
+    visited = {start}
+    while pending:
+        position = pending.pop()
+        for neighbor, wall in _open_playable_neighbors(
+            grid,
+            position,
+            playable_positions,
+        ):
+            if neighbor in visited:
+                continue
+            visited.add(neighbor)
+            pending.append(neighbor)
+    return visited
 
 
 def _center_positions(grid: Grid) -> set[Position]:
