@@ -1,5 +1,12 @@
+from random import Random
+
+import pytest
+
+from mazegen.exceptions import InvalidMazeError
 from mazegen.grid import Grid, Position, Wall
+from mazegen.modes.base import MazeMode
 from mazegen.modes.playable import (
+    PlayableMode,
     count_playable_loops,
     find_dead_ends,
     has_playable_open_3x3_area,
@@ -7,6 +14,126 @@ from mazegen.modes.playable import (
     reachable_corners,
     reachable_playable_positions,
 )
+
+
+def test_playable_mode_connected_contract_accepts_connected_base() -> None:
+    grid = Grid(2, 1)
+    grid.open_wall(Position(0, 0), Wall.EAST)
+
+    result = PlayableMode().apply(
+        grid,
+        Random(42),
+        set(),
+        Position(0, 0),
+        Position(1, 0),
+    )
+
+    assert result is grid
+
+
+def test_playable_mode_connected_contract_satisfies_maze_mode() -> None:
+    mode: MazeMode = PlayableMode()
+    grid = Grid(2, 1)
+    grid.open_wall(Position(0, 0), Wall.EAST)
+
+    assert mode.apply(
+        grid,
+        Random(42),
+        set(),
+        Position(0, 0),
+        Position(1, 0),
+    ) is grid
+
+
+def test_playable_mode_connected_contract_does_not_modify_grid() -> None:
+    grid = Grid(2, 1)
+    grid.open_wall(Position(0, 0), Wall.EAST)
+    before = _wall_signature(grid)
+
+    PlayableMode().apply(
+        grid,
+        Random(42),
+        set(),
+        Position(0, 0),
+        Position(1, 0),
+    )
+
+    assert _wall_signature(grid) == before
+
+
+def test_playable_mode_connected_contract_rejects_disconnected_cells() -> None:
+    grid = Grid(2, 1)
+
+    with pytest.raises(InvalidMazeError, match="reachable"):
+        PlayableMode().apply(
+            grid,
+            Random(42),
+            set(),
+            Position(0, 0),
+            Position(1, 0),
+        )
+
+
+def test_playable_mode_connected_contract_excludes_reserved_cells() -> None:
+    grid = Grid(3, 1)
+    grid.open_wall(Position(0, 0), Wall.EAST)
+    grid.open_wall(Position(1, 0), Wall.EAST)
+
+    with pytest.raises(InvalidMazeError, match="reachable"):
+        PlayableMode().apply(
+            grid,
+            Random(42),
+            {Position(1, 0)},
+            Position(0, 0),
+            Position(2, 0),
+        )
+
+
+def test_playable_mode_connected_contract_accepts_reserved_closed_cell() -> None:
+    grid = Grid(3, 2)
+    grid.open_wall(Position(0, 0), Wall.EAST)
+    grid.open_wall(Position(1, 0), Wall.EAST)
+    grid.open_wall(Position(0, 0), Wall.SOUTH)
+    grid.open_wall(Position(0, 1), Wall.EAST)
+    grid.open_wall(Position(2, 0), Wall.SOUTH)
+
+    result = PlayableMode().apply(
+        grid,
+        Random(42),
+        {Position(1, 1)},
+        Position(0, 0),
+        Position(2, 0),
+    )
+
+    assert result is grid
+
+
+def test_playable_mode_connected_contract_rejects_entry_in_reserved() -> None:
+    grid = Grid(2, 1)
+    grid.open_wall(Position(0, 0), Wall.EAST)
+
+    with pytest.raises(InvalidMazeError, match="reachable"):
+        PlayableMode().apply(
+            grid,
+            Random(42),
+            {Position(0, 0)},
+            Position(0, 0),
+            Position(1, 0),
+        )
+
+
+def test_playable_mode_connected_contract_rejects_exit_in_reserved() -> None:
+    grid = Grid(2, 1)
+    grid.open_wall(Position(0, 0), Wall.EAST)
+
+    with pytest.raises(InvalidMazeError, match="reachable"):
+        PlayableMode().apply(
+            grid,
+            Random(42),
+            {Position(1, 0)},
+            Position(0, 0),
+            Position(1, 0),
+        )
 
 
 def test_reachable_playable_positions_excludes_reserved_cells() -> None:
@@ -131,3 +258,10 @@ def _open_full_three_by_three(grid: Grid) -> None:
     for y in range(2):
         for x in range(3):
             grid.open_wall(Position(x, y), Wall.SOUTH)
+
+
+def _wall_signature(grid: Grid) -> tuple[tuple[int, ...], ...]:
+    return tuple(
+        tuple(int(grid.cell_at(Position(x, y)).walls) for x in range(grid.width))
+        for y in range(grid.height)
+    )

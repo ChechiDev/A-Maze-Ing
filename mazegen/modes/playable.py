@@ -1,6 +1,35 @@
 """Validation helpers for playable maze mode."""
 
+from random import Random
+
+from mazegen.exceptions import InvalidMazeError
 from mazegen.grid import Grid, Position, Wall
+
+
+class PlayableMode:
+    """Validate the connected base required by playable maze mode."""
+
+    def apply(
+        self,
+        grid: Grid,
+        rng: Random,
+        reserved: set[Position],
+        entry: Position,
+        exit: Position,
+    ) -> Grid:
+        """Return grid if playable cells are connected and endpoints reachable."""
+        _ = rng
+        if not grid.in_bounds(entry) or not grid.in_bounds(exit):
+            raise InvalidMazeError("entry and exit must be reachable")
+        if entry in reserved or exit in reserved:
+            raise InvalidMazeError("entry and exit must be reachable")
+
+        reachable = reachable_playable_positions(grid, entry, reserved)
+        if exit not in reachable:
+            raise InvalidMazeError("entry and exit must be reachable")
+        if playable_positions(grid, reserved) - reachable:
+            raise InvalidMazeError("playable maze cells must be connected")
+        return grid
 
 
 def playable_positions(grid: Grid, reserved: set[Position]) -> set[Position]:
