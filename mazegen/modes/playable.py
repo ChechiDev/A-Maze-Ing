@@ -6,6 +6,9 @@ from mazegen.exceptions import InvalidMazeError
 from mazegen.grid import Grid, Position, Wall
 
 
+MAX_REAL_DEAD_ENDS = 2
+
+
 class PlayableMode:
     """Validate the connected base required by playable maze mode."""
 
@@ -23,6 +26,7 @@ class PlayableMode:
             raise InvalidMazeError("entry and exit must be reachable")
         if entry in reserved or exit in reserved:
             raise InvalidMazeError("entry and exit must be reachable")
+        _ensure_key_cells_available(grid, reserved)
 
         reachable = reachable_playable_positions(grid, entry, reserved)
         if exit not in reachable:
@@ -35,6 +39,18 @@ class PlayableMode:
             playable_positions(grid, reserved),
             2,
         )
+        _reduce_dead_ends(
+            grid,
+            rng,
+            playable_positions(grid, reserved),
+            MAX_REAL_DEAD_ENDS,
+        )
+        _ensure_key_cells_reachable(
+            grid,
+            reserved,
+            reachable_playable_positions(grid, entry, reserved),
+        )
+        _validate_playable_final_state(grid, reserved, entry)
         return grid
 
 
@@ -97,13 +113,17 @@ def reachable_corners(
     reachable: set[Position],
 ) -> set[Position]:
     """Return grid corners included in the reachable positions."""
-    corners = {
+    return corner_positions(grid) & reachable
+
+
+def corner_positions(grid: Grid) -> set[Position]:
+    """Return all unique corner positions for the grid."""
+    return {
         Position(0, 0),
         Position(grid.width - 1, 0),
         Position(0, grid.height - 1),
         Position(grid.width - 1, grid.height - 1),
     }
-    return corners & reachable
 
 
 def is_center_reachable(
@@ -115,7 +135,16 @@ def is_center_reachable(
     Even dimensions have two central coordinates for that axis, so any cell in
     the central 2x1, 1x2, or 2x2 area counts as a reachable center.
     """
-    return bool(_center_positions(grid) & reachable)
+    return bool(center_positions(grid) & reachable)
+
+
+def center_positions(grid: Grid) -> set[Position]:
+    """Return all geometric center candidate positions for the grid."""
+    return {
+        Position(x, y)
+        for x in _center_axis_positions(grid.width)
+        for y in _center_axis_positions(grid.height)
+    }
 
 
 def has_playable_open_3x3_area(
@@ -197,11 +226,209 @@ def _ensure_minimum_loops(
     for position, wall in candidates:
         if count_playable_loops(grid, playable_positions) >= minimum_loops:
             return
-        if _can_open_playable_wall(grid, position, wall, playable_positions):
-            grid.open_wall(position, wall)
+        _open_wall_if_safe(grid, position, wall, playable_positions)
 
     if count_playable_loops(grid, playable_positions) < minimum_loops:
         raise InvalidMazeError("playable maze requires at least two loops")
+
+
+def _ensure_key_cells_available(
+    grid: Grid,
+    reserved: set[Position],
+) -> None:
+    if corner_positions(grid) & reserved:
+        raise InvalidMazeError("playable maze corners must be reachable")
+    if not center_positions(grid) - reserved:
+        raise InvalidMazeError("playable maze center must be reachable")
+
+
+def _ensure_key_cells_reachable(
+    grid: Grid,
+    reserved: set[Position],
+    reachable: set[Position],
+) -> None:
+    playable = playable_positions(grid, reserved)
+    if not corner_positions(grid) <= playable:
+        raise InvalidMazeError("playable maze corners must be reachable")
+    if not corner_positions(grid) <= reachable:
+        raise InvalidMazeError("playable maze corners must be reachable")
+    if not center_positions(grid) & playable:
+        raise InvalidMazeError("playable maze center must be reachable")
+    if not center_positions(grid) & reachable:
+        raise InvalidMazeError("playable maze center must be reachable")
+
+
+def _validate_playable_final_state(
+    grid: Grid,
+    reserved: set[Position],
+    entry: Position,
+) -> None:
+    playable = playable_positions(grid, reserved)
+    reachable = reachable_playable_positions(grid, entry, reserved)
+    if playable - reachable:
+        raise InvalidMazeError("playable maze cells must be connected")
+    if count_playable_loops(grid, playable) < 2:
+        raise InvalidMazeError("playable maze requires at least two loops")
+    if not corner_positions(grid) <= reachable:
+        raise InvalidMazeError("playable maze corners must be reachable")
+    if not center_positions(grid) & reachable:
+        raise InvalidMazeError("playable maze center must be reachable")
+    if len(find_dead_ends(grid, playable)) > MAX_REAL_DEAD_ENDS:
+        raise InvalidMazeError(
+            "playable maze must not contain more than two dead ends"
+        )
+    if has_playable_open_3x3_area(grid, playable):
+        raise InvalidMazeError(
+            "playable maze must not contain open 3x3 areas"
+        )
+
+
+def _reduce_dead_ends(
+    grid: Grid,
+    rng: Random,
+    playable_positions: set[Position],
+    max_dead_ends: int,
+) -> None:
+    dead_ends = find_dead_ends(grid, playable_positions)
+    while len(dead_ends) > max_dead_ends:
+        candidates = _dead_end_wall_candidates(
+            grid,
+            dead_ends,
+            playable_positions,
+        )
+        rng.shuffle(candidates)
+        opened_wall = False
+        for position, wall in candidates:
+            if _open_wall_if_safe(grid, position, wall, playable_positions):
+                opened_wall = True
+                break
+        if not opened_wall:
+            break
+        dead_ends = find_dead_ends(grid, playable_positions)
+
+    if len(find_dead_ends(grid, playable_positions)) > max_dead_ends:
+        raise InvalidMazeError(
+            "playable maze must not contain more than two dead ends"
+        )
+
+
+def _dead_end_wall_candidates(
+    grid: Grid,
+    dead_ends: set[Position],
+    playable_positions: set[Position],
+) -> list[tuple[Position, Wall]]:
+    candidates: list[tuple[Position, Wall]] = []
+    for position in dead_ends:
+        for neighbor, wall in grid.neighbors(position):
+            if neighbor not in playable_positions:
+                continue
+            if grid.cell_at(position).has_wall(wall):
+                candidates.append((position, wall))
+    return candidates
+
+
+def _open_wall_if_safe(
+    grid: Grid,
+    position: Position,
+    wall: Wall,
+    playable_positions: set[Position],
+) -> bool:
+    if not _can_open_playable_wall(grid, position, wall, playable_positions):
+        return False
+    if _would_create_playable_open_3x3_area(
+        grid,
+        position,
+        wall,
+        playable_positions,
+    ):
+        return False
+    grid.open_wall(position, wall)
+    return True
+
+
+def _would_create_playable_open_3x3_area(
+    grid: Grid,
+    position: Position,
+    wall: Wall,
+    playable_positions: set[Position],
+) -> bool:
+    if grid.width < 3 or grid.height < 3:
+        return False
+    return any(
+        _is_playable_open_3x3_block_with_candidate(
+            grid,
+            Position(x, y),
+            playable_positions,
+            position,
+            wall,
+        )
+        for y in range(grid.height - 2)
+        for x in range(grid.width - 2)
+    )
+
+
+def _is_playable_open_3x3_block_with_candidate(
+    grid: Grid,
+    top_left: Position,
+    playable_positions: set[Position],
+    candidate_position: Position,
+    candidate_wall: Wall,
+) -> bool:
+    block_positions = {
+        Position(top_left.x + offset_x, top_left.y + offset_y)
+        for offset_y in range(3)
+        for offset_x in range(3)
+    }
+    if not block_positions <= playable_positions:
+        return False
+
+    for offset_y in range(3):
+        for offset_x in range(3):
+            position = Position(top_left.x + offset_x, top_left.y + offset_y)
+            if offset_x < 2 and not _wall_is_open_with_candidate(
+                grid,
+                position,
+                Wall.EAST,
+                candidate_position,
+                candidate_wall,
+            ):
+                return False
+            if offset_y < 2 and not _wall_is_open_with_candidate(
+                grid,
+                position,
+                Wall.SOUTH,
+                candidate_position,
+                candidate_wall,
+            ):
+                return False
+    return True
+
+
+def _wall_is_open_with_candidate(
+    grid: Grid,
+    position: Position,
+    wall: Wall,
+    candidate_position: Position,
+    candidate_wall: Wall,
+) -> bool:
+    if _candidate_edge_matches(position, wall, candidate_position, candidate_wall):
+        return True
+    return not grid.cell_at(position).has_wall(wall)
+
+
+def _candidate_edge_matches(
+    position: Position,
+    wall: Wall,
+    candidate_position: Position,
+    candidate_wall: Wall,
+) -> bool:
+    return (
+        position == candidate_position
+        and wall == candidate_wall
+    ) or (
+        position == candidate_position.move(candidate_wall)
+        and wall == candidate_wall.opposite
+    )
 
 
 def _internal_wall_candidates(
@@ -253,14 +480,6 @@ def _reachable_within_playable(
             visited.add(neighbor)
             pending.append(neighbor)
     return visited
-
-
-def _center_positions(grid: Grid) -> set[Position]:
-    return {
-        Position(x, y)
-        for x in _center_axis_positions(grid.width)
-        for y in _center_axis_positions(grid.height)
-    }
 
 
 def _center_axis_positions(size: int) -> set[int]:

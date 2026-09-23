@@ -7,6 +7,8 @@ from mazegen.grid import Grid, Position, Wall
 from mazegen.modes.base import MazeMode
 from mazegen.modes.playable import (
     PlayableMode,
+    center_positions,
+    corner_positions,
     count_playable_loops,
     find_dead_ends,
     has_playable_open_3x3_area,
@@ -191,6 +193,278 @@ def test_playable_mode_loops_rejects_when_two_loops_are_impossible() -> None:
         )
 
 
+def test_playable_mode_key_cells_accepts_reachable_corners_and_center() -> None:
+    grid = _connected_tree_grid_3x3()
+
+    PlayableMode().apply(
+        grid,
+        Random(42),
+        set(),
+        Position(0, 0),
+        Position(2, 2),
+    )
+    reachable = reachable_playable_positions(grid, Position(0, 0), set())
+
+    assert corner_positions(grid) <= reachable
+    assert is_center_reachable(grid, reachable)
+
+
+def test_playable_mode_key_cells_rejects_reserved_corner() -> None:
+    grid = _connected_tree_grid_3x3()
+
+    with pytest.raises(InvalidMazeError, match="corners"):
+        PlayableMode().apply(
+            grid,
+            Random(42),
+            {Position(0, 2)},
+            Position(0, 0),
+            Position(2, 2),
+        )
+
+
+def test_playable_mode_key_cells_rejects_unreachable_corner() -> None:
+    grid = Grid(3, 3)
+    grid.open_wall(Position(0, 0), Wall.EAST)
+    grid.open_wall(Position(1, 0), Wall.EAST)
+    grid.open_wall(Position(2, 0), Wall.SOUTH)
+    grid.open_wall(Position(2, 1), Wall.SOUTH)
+
+    with pytest.raises(InvalidMazeError, match="connected|corners"):
+        PlayableMode().apply(
+            grid,
+            Random(42),
+            set(),
+            Position(0, 0),
+            Position(2, 2),
+        )
+
+
+def test_playable_mode_key_cells_rejects_reserved_center() -> None:
+    grid = _connected_tree_grid_3x3()
+
+    with pytest.raises(InvalidMazeError, match="center"):
+        PlayableMode().apply(
+            grid,
+            Random(42),
+            {Position(1, 1)},
+            Position(0, 0),
+            Position(2, 2),
+        )
+
+
+def test_playable_mode_dead_ends_reduces_to_internal_threshold() -> None:
+    grid = _connected_tree_grid_4x4_with_dead_ends()
+
+    PlayableMode().apply(
+        grid,
+        Random(42),
+        set(),
+        Position(0, 0),
+        Position(3, 3),
+    )
+
+    assert len(find_dead_ends(grid, set(grid.positions()))) <= 2
+
+
+def test_playable_mode_dead_ends_deterministic_with_seed() -> None:
+    first = _connected_tree_grid_4x4_with_dead_ends()
+    second = _connected_tree_grid_4x4_with_dead_ends()
+
+    PlayableMode().apply(
+        first,
+        Random(42),
+        set(),
+        Position(0, 0),
+        Position(3, 3),
+    )
+    PlayableMode().apply(
+        second,
+        Random(42),
+        set(),
+        Position(0, 0),
+        Position(3, 3),
+    )
+
+    assert _wall_signature(first) == _wall_signature(second)
+
+
+def test_playable_mode_dead_ends_do_not_open_walls_to_reserved() -> None:
+    grid = _connected_tree_grid_4x4_with_reserved_cell()
+    reserved = {Position(1, 1)}
+
+    PlayableMode().apply(
+        grid,
+        Random(42),
+        reserved,
+        Position(0, 0),
+        Position(3, 3),
+    )
+
+    assert _open_edges_touching_reserved(grid, reserved) == set()
+
+
+def test_playable_mode_open_area_does_not_create_three_by_three() -> None:
+    grid = _connected_tree_grid_4x4_with_dead_ends()
+
+    PlayableMode().apply(
+        grid,
+        Random(42),
+        set(),
+        Position(0, 0),
+        Position(3, 3),
+    )
+
+    assert not has_playable_open_3x3_area(grid, set(grid.positions()))
+
+
+def test_playable_mode_open_area_preserves_loops_when_avoiding_three_by_three() -> None:
+    grid = _connected_tree_grid_3x3()
+
+    PlayableMode().apply(
+        grid,
+        Random(42),
+        set(),
+        Position(0, 0),
+        Position(2, 2),
+    )
+
+    assert count_playable_loops(grid, set(grid.positions())) >= 2
+    assert not has_playable_open_3x3_area(grid, set(grid.positions()))
+
+
+def test_playable_mode_open_area_ignores_reserved_cells() -> None:
+    grid = _connected_tree_grid_4x4_with_reserved_cell()
+    reserved = {Position(1, 1)}
+
+    PlayableMode().apply(
+        grid,
+        Random(42),
+        reserved,
+        Position(0, 0),
+        Position(3, 3),
+    )
+    playable = set(grid.positions()) - reserved
+
+    assert not has_playable_open_3x3_area(grid, playable)
+    assert _open_edges_touching_reserved(grid, reserved) == set()
+
+
+def test_playable_mode_final_state_is_connected_for_reasonable_grid() -> None:
+    grid = _connected_tree_grid_4x4_with_dead_ends()
+
+    PlayableMode().apply(
+        grid,
+        Random(42),
+        set(),
+        Position(0, 0),
+        Position(3, 3),
+    )
+    playable = set(grid.positions())
+    reachable = reachable_playable_positions(grid, Position(0, 0), set())
+
+    assert playable <= reachable
+
+
+def test_playable_mode_final_state_has_required_loops() -> None:
+    grid = _connected_tree_grid_4x4_with_dead_ends()
+
+    PlayableMode().apply(
+        grid,
+        Random(42),
+        set(),
+        Position(0, 0),
+        Position(3, 3),
+    )
+
+    assert count_playable_loops(grid, set(grid.positions())) >= 2
+
+
+def test_playable_mode_final_state_has_reachable_key_cells() -> None:
+    grid = _connected_tree_grid_4x4_with_dead_ends()
+
+    PlayableMode().apply(
+        grid,
+        Random(42),
+        set(),
+        Position(0, 0),
+        Position(3, 3),
+    )
+    reachable = reachable_playable_positions(grid, Position(0, 0), set())
+
+    assert corner_positions(grid) <= reachable
+    assert is_center_reachable(grid, reachable)
+
+
+def test_playable_mode_final_state_respects_dead_end_threshold() -> None:
+    grid = _connected_tree_grid_4x4_with_dead_ends()
+
+    PlayableMode().apply(
+        grid,
+        Random(42),
+        set(),
+        Position(0, 0),
+        Position(3, 3),
+    )
+
+    assert len(find_dead_ends(grid, set(grid.positions()))) <= 2
+
+
+def test_playable_mode_final_state_has_no_open_three_by_three() -> None:
+    grid = _connected_tree_grid_4x4_with_dead_ends()
+
+    PlayableMode().apply(
+        grid,
+        Random(42),
+        set(),
+        Position(0, 0),
+        Position(3, 3),
+    )
+
+    assert not has_playable_open_3x3_area(grid, set(grid.positions()))
+
+
+def test_playable_mode_final_state_excludes_reserved_cells() -> None:
+    grid = _connected_tree_grid_4x4_with_reserved_cell()
+    reserved = {Position(1, 1)}
+
+    PlayableMode().apply(
+        grid,
+        Random(42),
+        reserved,
+        Position(0, 0),
+        Position(3, 3),
+    )
+    playable = set(grid.positions()) - reserved
+    reachable = reachable_playable_positions(grid, Position(0, 0), reserved)
+
+    assert playable <= reachable
+    assert Position(1, 1) not in reachable
+    assert _open_edges_touching_reserved(grid, reserved) == set()
+    assert not has_playable_open_3x3_area(grid, playable)
+
+
+def test_corner_positions_handles_degenerate_grids() -> None:
+    assert corner_positions(Grid(1, 1)) == {Position(0, 0)}
+    assert corner_positions(Grid(1, 3)) == {
+        Position(0, 0),
+        Position(0, 2),
+    }
+    assert corner_positions(Grid(3, 1)) == {
+        Position(0, 0),
+        Position(2, 0),
+    }
+
+
+def test_center_positions_handles_even_dimensions() -> None:
+    assert center_positions(Grid(4, 4)) == {
+        Position(1, 1),
+        Position(2, 1),
+        Position(1, 2),
+        Position(2, 2),
+    }
+    assert center_positions(Grid(3, 3)) == {Position(1, 1)}
+
+
 def test_reachable_playable_positions_excludes_reserved_cells() -> None:
     grid = Grid(3, 1)
     grid.open_wall(Position(0, 0), Wall.EAST)
@@ -361,6 +635,26 @@ def _connected_tree_grid_4x4_with_reserved_cell() -> Grid:
     grid.open_wall(Position(2, 1), Wall.SOUTH)
     grid.open_wall(Position(2, 2), Wall.WEST)
     grid.open_wall(Position(1, 2), Wall.WEST)
+    return grid
+
+
+def _connected_tree_grid_4x4_with_dead_ends() -> Grid:
+    grid = Grid(4, 4)
+    grid.open_wall(Position(0, 0), Wall.EAST)
+    grid.open_wall(Position(1, 0), Wall.EAST)
+    grid.open_wall(Position(2, 0), Wall.EAST)
+    grid.open_wall(Position(3, 0), Wall.SOUTH)
+    grid.open_wall(Position(3, 1), Wall.SOUTH)
+    grid.open_wall(Position(3, 2), Wall.SOUTH)
+    grid.open_wall(Position(3, 3), Wall.WEST)
+    grid.open_wall(Position(2, 3), Wall.WEST)
+    grid.open_wall(Position(1, 3), Wall.WEST)
+    grid.open_wall(Position(0, 3), Wall.NORTH)
+    grid.open_wall(Position(0, 2), Wall.NORTH)
+    grid.open_wall(Position(1, 0), Wall.SOUTH)
+    grid.open_wall(Position(2, 0), Wall.SOUTH)
+    grid.open_wall(Position(1, 3), Wall.NORTH)
+    grid.open_wall(Position(2, 3), Wall.NORTH)
     return grid
 
 
