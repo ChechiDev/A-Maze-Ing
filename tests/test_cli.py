@@ -1,6 +1,9 @@
 from io import StringIO
 from pathlib import Path
+import subprocess
+import sys
 
+import a_maze_ing
 import ui.cli
 from ui.cli import main
 
@@ -113,6 +116,41 @@ def test_cli_module_import_does_not_execute_cli() -> None:
 
 def test_cli_module_does_not_use_input() -> None:
     assert "input(" not in Path(ui.cli.__file__).read_text(encoding="utf-8")
+
+
+def test_entrypoint_import_does_not_execute_cli() -> None:
+    assert a_maze_ing.main is main
+
+
+def test_entrypoint_script_with_valid_config_writes_output_and_renders(
+    tmp_path: Path,
+) -> None:
+    output_path = tmp_path / "maze.txt"
+    config_path = _write_config(tmp_path, output_path)
+
+    completed = subprocess.run(
+        [sys.executable, "a_maze_ing.py", str(config_path)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0
+    assert output_path.is_file()
+    assert "E" in completed.stdout
+    assert "S" in completed.stdout
+
+
+def test_entrypoint_script_without_arguments_returns_error() -> None:
+    completed = subprocess.run(
+        [sys.executable, "a_maze_ing.py"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert completed.returncode != 0
+    assert "usage" in completed.stderr
 
 
 def _write_config(
