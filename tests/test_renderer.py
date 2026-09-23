@@ -65,6 +65,11 @@ def test_line_render_palette_uses_default_line_symbols() -> None:
     assert palette.bottom_left == "└"
     assert palette.bottom_right == "┘"
     assert palette.junction == "┼"
+    assert palette.tee_up == "┴"
+    assert palette.tee_down == "┬"
+    assert palette.tee_left == "┤"
+    assert palette.tee_right == "├"
+    assert palette.cross == "┼"
     assert palette.entry == "E"
     assert palette.exit == "S"
     assert palette.path == "·"
@@ -83,6 +88,11 @@ def test_line_render_palette_accepts_custom_symbols() -> None:
         bottom_left="c",
         bottom_right="d",
         junction="+",
+        tee_up="u",
+        tee_down="n",
+        tee_left="l",
+        tee_right="r",
+        cross="x",
         entry="I",
         exit="O",
         path="*",
@@ -97,6 +107,11 @@ def test_line_render_palette_accepts_custom_symbols() -> None:
     assert palette.bottom_left == "c"
     assert palette.bottom_right == "d"
     assert palette.junction == "+"
+    assert palette.tee_up == "u"
+    assert palette.tee_down == "n"
+    assert palette.tee_left == "l"
+    assert palette.tee_right == "r"
+    assert palette.cross == "x"
     assert palette.entry == "I"
     assert palette.exit == "O"
     assert palette.path == "*"
