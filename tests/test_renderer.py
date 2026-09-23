@@ -260,13 +260,31 @@ def test_line_renderer_uses_custom_palette_symbols() -> None:
         empty="_",
     )
 
-    rendered = LineRenderer(palette).render(_path_result(), show_path=True)
+    junction_rendered = LineRenderer(palette).render(
+        _fully_closed_two_by_two_result(),
+        show_path=True,
+    )
+    path_rendered = LineRenderer(palette).render(
+        _l_shaped_result(),
+        show_path=True,
+    )
+    rendered = junction_rendered + path_rendered
 
     assert "=" in rendered
     assert "!" in rendered
+    assert "a" in rendered
+    assert "b" in rendered
+    assert "c" in rendered
+    assert "d" in rendered
+    assert "u" in rendered
+    assert "n" in rendered
+    assert "l" in rendered
+    assert "r" in rendered
+    assert "x" in rendered
     assert "I" in rendered
     assert "O" in rendered
     assert "*" in rendered
+    assert "X" in rendered
     assert "_" in rendered
 
 
@@ -284,10 +302,30 @@ def test_line_renderer_horizontal_corridor_snapshot() -> None:
     assert rendered == "┌───┐\n│E S│\n└───┘\n"
 
 
+def test_line_renderer_single_fully_closed_cell_snapshot() -> None:
+    rendered = LineRenderer().render(_minimal_result(), show_path=False)
+
+    assert rendered == "┌─┐\n│S│\n└─┘\n"
+
+
 def test_line_renderer_vertical_corridor_snapshot() -> None:
     rendered = LineRenderer().render(_vertical_result(), show_path=False)
 
     assert rendered == "┌─┐\n│E│\n│ │\n│S│\n└─┘\n"
+
+
+def test_line_renderer_l_shaped_path_snapshot() -> None:
+    rendered = LineRenderer().render(_l_shaped_result(), show_path=True)
+
+    assert rendered == "┌───┐\n│E ·│\n├─┐ │\n│4│S│\n└─┴─┘\n"
+
+
+def test_line_renderer_path_does_not_overwrite_entry_or_exit() -> None:
+    rendered = LineRenderer().render(_l_shaped_result(), show_path=True)
+
+    assert "E" in rendered
+    assert "S" in rendered
+    assert rendered.count("·") == 1
 
 
 def test_line_renderer_import_has_no_cli_side_effects() -> None:
@@ -342,6 +380,27 @@ def _vertical_result() -> MazeResult:
         entry=Position(0, 0),
         exit=Position(0, 1),
         shortest_path="S",
+    )
+
+
+def _l_shaped_result() -> MazeResult:
+    grid = Grid(2, 2)
+    grid.open_wall(Position(0, 0), Wall.EAST)
+    grid.open_wall(Position(1, 0), Wall.SOUTH)
+    return MazeResult(
+        grid=grid,
+        entry=Position(0, 0),
+        exit=Position(1, 1),
+        shortest_path="ES",
+    )
+
+
+def _fully_closed_two_by_two_result() -> MazeResult:
+    return MazeResult(
+        grid=Grid(2, 2),
+        entry=Position(0, 0),
+        exit=Position(1, 1),
+        shortest_path="",
     )
 
 
