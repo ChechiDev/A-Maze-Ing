@@ -7,6 +7,8 @@ from mazegen.grid import Grid, Position, Wall
 from mazegen.modes.base import MazeMode
 from mazegen.modes.playable import (
     PlayableMode,
+    center_positions,
+    corner_positions,
     count_playable_loops,
     find_dead_ends,
     has_playable_open_3x3_area,
@@ -189,6 +191,87 @@ def test_playable_mode_loops_rejects_when_two_loops_are_impossible() -> None:
             Position(0, 0),
             Position(1, 0),
         )
+
+
+def test_playable_mode_key_cells_accepts_reachable_corners_and_center() -> None:
+    grid = _connected_tree_grid_3x3()
+
+    PlayableMode().apply(
+        grid,
+        Random(42),
+        set(),
+        Position(0, 0),
+        Position(2, 2),
+    )
+    reachable = reachable_playable_positions(grid, Position(0, 0), set())
+
+    assert corner_positions(grid) <= reachable
+    assert is_center_reachable(grid, reachable)
+
+
+def test_playable_mode_key_cells_rejects_reserved_corner() -> None:
+    grid = _connected_tree_grid_3x3()
+
+    with pytest.raises(InvalidMazeError, match="corners"):
+        PlayableMode().apply(
+            grid,
+            Random(42),
+            {Position(0, 2)},
+            Position(0, 0),
+            Position(2, 2),
+        )
+
+
+def test_playable_mode_key_cells_rejects_unreachable_corner() -> None:
+    grid = Grid(3, 3)
+    grid.open_wall(Position(0, 0), Wall.EAST)
+    grid.open_wall(Position(1, 0), Wall.EAST)
+    grid.open_wall(Position(2, 0), Wall.SOUTH)
+    grid.open_wall(Position(2, 1), Wall.SOUTH)
+
+    with pytest.raises(InvalidMazeError, match="connected|corners"):
+        PlayableMode().apply(
+            grid,
+            Random(42),
+            set(),
+            Position(0, 0),
+            Position(2, 2),
+        )
+
+
+def test_playable_mode_key_cells_rejects_reserved_center() -> None:
+    grid = _connected_tree_grid_3x3()
+
+    with pytest.raises(InvalidMazeError, match="center"):
+        PlayableMode().apply(
+            grid,
+            Random(42),
+            {Position(1, 1)},
+            Position(0, 0),
+            Position(2, 2),
+        )
+
+
+def test_corner_positions_handles_degenerate_grids() -> None:
+    assert corner_positions(Grid(1, 1)) == {Position(0, 0)}
+    assert corner_positions(Grid(1, 3)) == {
+        Position(0, 0),
+        Position(0, 2),
+    }
+    assert corner_positions(Grid(3, 1)) == {
+        Position(0, 0),
+        Position(2, 0),
+    }
+
+
+def test_center_positions_handles_even_dimensions() -> None:
+    assert center_positions(Grid(4, 4)) == {
+        Position(1, 1),
+        Position(2, 1),
+        Position(1, 2),
+        Position(2, 2),
+    }
+    assert center_positions(Grid(3, 3)) == {Position(1, 1)}
 
 
 def test_reachable_playable_positions_excludes_reserved_cells() -> None:

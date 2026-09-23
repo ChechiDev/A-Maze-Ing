@@ -23,6 +23,7 @@ class PlayableMode:
             raise InvalidMazeError("entry and exit must be reachable")
         if entry in reserved or exit in reserved:
             raise InvalidMazeError("entry and exit must be reachable")
+        _ensure_key_cells_available(grid, reserved)
 
         reachable = reachable_playable_positions(grid, entry, reserved)
         if exit not in reachable:
@@ -34,6 +35,11 @@ class PlayableMode:
             rng,
             playable_positions(grid, reserved),
             2,
+        )
+        _ensure_key_cells_reachable(
+            grid,
+            reserved,
+            reachable_playable_positions(grid, entry, reserved),
         )
         return grid
 
@@ -97,13 +103,17 @@ def reachable_corners(
     reachable: set[Position],
 ) -> set[Position]:
     """Return grid corners included in the reachable positions."""
-    corners = {
+    return corner_positions(grid) & reachable
+
+
+def corner_positions(grid: Grid) -> set[Position]:
+    """Return all unique corner positions for the grid."""
+    return {
         Position(0, 0),
         Position(grid.width - 1, 0),
         Position(0, grid.height - 1),
         Position(grid.width - 1, grid.height - 1),
     }
-    return corners & reachable
 
 
 def is_center_reachable(
@@ -115,7 +125,16 @@ def is_center_reachable(
     Even dimensions have two central coordinates for that axis, so any cell in
     the central 2x1, 1x2, or 2x2 area counts as a reachable center.
     """
-    return bool(_center_positions(grid) & reachable)
+    return bool(center_positions(grid) & reachable)
+
+
+def center_positions(grid: Grid) -> set[Position]:
+    """Return all geometric center candidate positions for the grid."""
+    return {
+        Position(x, y)
+        for x in _center_axis_positions(grid.width)
+        for y in _center_axis_positions(grid.height)
+    }
 
 
 def has_playable_open_3x3_area(
@@ -204,6 +223,32 @@ def _ensure_minimum_loops(
         raise InvalidMazeError("playable maze requires at least two loops")
 
 
+def _ensure_key_cells_available(
+    grid: Grid,
+    reserved: set[Position],
+) -> None:
+    if corner_positions(grid) & reserved:
+        raise InvalidMazeError("playable maze corners must be reachable")
+    if not center_positions(grid) - reserved:
+        raise InvalidMazeError("playable maze center must be reachable")
+
+
+def _ensure_key_cells_reachable(
+    grid: Grid,
+    reserved: set[Position],
+    reachable: set[Position],
+) -> None:
+    playable = playable_positions(grid, reserved)
+    if not corner_positions(grid) <= playable:
+        raise InvalidMazeError("playable maze corners must be reachable")
+    if not corner_positions(grid) <= reachable:
+        raise InvalidMazeError("playable maze corners must be reachable")
+    if not center_positions(grid) & playable:
+        raise InvalidMazeError("playable maze center must be reachable")
+    if not center_positions(grid) & reachable:
+        raise InvalidMazeError("playable maze center must be reachable")
+
+
 def _internal_wall_candidates(
     grid: Grid,
     playable_positions: set[Position],
@@ -253,14 +298,6 @@ def _reachable_within_playable(
             visited.add(neighbor)
             pending.append(neighbor)
     return visited
-
-
-def _center_positions(grid: Grid) -> set[Position]:
-    return {
-        Position(x, y)
-        for x in _center_axis_positions(grid.width)
-        for y in _center_axis_positions(grid.height)
-    }
 
 
 def _center_axis_positions(size: int) -> set[int]:
