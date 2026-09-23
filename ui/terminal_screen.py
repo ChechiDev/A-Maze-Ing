@@ -1,7 +1,8 @@
 """Terminal screen control helpers for stable frame redraws."""
 
 import sys
-from typing import TextIO
+from types import TracebackType
+from typing import Literal, Self, TextIO
 
 
 CLEAR_SCREEN = "\x1b[2J"
@@ -20,6 +21,23 @@ class TerminalScreen:
         self._cleared = False
         self._previous_line_count = 0
         self._previous_width = 0
+
+    def __enter__(self) -> Self:
+        """Hide the cursor while controlled terminal drawing is active."""
+        self.hide_cursor()
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> Literal[False]:
+        """Restore the cursor and propagate any active exception."""
+        _ = exc_type, exc, traceback
+        self.show_cursor()
+        self._stream.flush()
+        return False
 
     def clear_once(self) -> None:
         """Clear the terminal screen once for this controller instance."""

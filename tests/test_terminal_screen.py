@@ -1,5 +1,7 @@
 from io import StringIO
 
+import pytest
+
 from ui.terminal_screen import (
     CLEAR_LINE,
     CLEAR_SCREEN,
@@ -55,6 +57,42 @@ def test_cursor_visibility_sequences_are_emitted() -> None:
     screen.show_cursor()
 
     assert stream.getvalue() == HIDE_CURSOR + SHOW_CURSOR
+
+
+def test_context_manager_hides_and_restores_cursor_on_normal_exit() -> None:
+    stream = FakeStream()
+
+    with TerminalScreen(stream):
+        assert stream.getvalue() == HIDE_CURSOR
+
+    assert stream.getvalue() == HIDE_CURSOR + SHOW_CURSOR
+
+
+def test_context_manager_returns_same_screen_instance() -> None:
+    stream = FakeStream()
+    screen = TerminalScreen(stream)
+
+    with screen as active_screen:
+        assert active_screen is screen
+
+
+def test_context_manager_restores_cursor_when_exception_is_raised() -> None:
+    stream = FakeStream()
+
+    with pytest.raises(RuntimeError):
+        with TerminalScreen(stream):
+            raise RuntimeError("handled error")
+
+    assert stream.getvalue() == HIDE_CURSOR + SHOW_CURSOR
+
+
+def test_context_manager_flushes_stream_on_exit() -> None:
+    stream = FakeStream()
+
+    with TerminalScreen(stream):
+        pass
+
+    assert stream.flush_count == 1
 
 
 def test_render_frame_first_frame_clears_moves_writes_and_flushes() -> None:
