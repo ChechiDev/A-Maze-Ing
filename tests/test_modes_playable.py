@@ -252,6 +252,57 @@ def test_playable_mode_key_cells_rejects_reserved_center() -> None:
         )
 
 
+def test_playable_mode_dead_ends_reduces_to_internal_threshold() -> None:
+    grid = _connected_tree_grid_4x4_with_dead_ends()
+
+    PlayableMode().apply(
+        grid,
+        Random(42),
+        set(),
+        Position(0, 0),
+        Position(3, 3),
+    )
+
+    assert len(find_dead_ends(grid, set(grid.positions()))) <= 2
+
+
+def test_playable_mode_dead_ends_deterministic_with_seed() -> None:
+    first = _connected_tree_grid_4x4_with_dead_ends()
+    second = _connected_tree_grid_4x4_with_dead_ends()
+
+    PlayableMode().apply(
+        first,
+        Random(42),
+        set(),
+        Position(0, 0),
+        Position(3, 3),
+    )
+    PlayableMode().apply(
+        second,
+        Random(42),
+        set(),
+        Position(0, 0),
+        Position(3, 3),
+    )
+
+    assert _wall_signature(first) == _wall_signature(second)
+
+
+def test_playable_mode_dead_ends_do_not_open_walls_to_reserved() -> None:
+    grid = _connected_tree_grid_4x4_with_reserved_cell()
+    reserved = {Position(1, 1)}
+
+    PlayableMode().apply(
+        grid,
+        Random(42),
+        reserved,
+        Position(0, 0),
+        Position(3, 3),
+    )
+
+    assert _open_edges_touching_reserved(grid, reserved) == set()
+
+
 def test_corner_positions_handles_degenerate_grids() -> None:
     assert corner_positions(Grid(1, 1)) == {Position(0, 0)}
     assert corner_positions(Grid(1, 3)) == {
@@ -444,6 +495,26 @@ def _connected_tree_grid_4x4_with_reserved_cell() -> Grid:
     grid.open_wall(Position(2, 1), Wall.SOUTH)
     grid.open_wall(Position(2, 2), Wall.WEST)
     grid.open_wall(Position(1, 2), Wall.WEST)
+    return grid
+
+
+def _connected_tree_grid_4x4_with_dead_ends() -> Grid:
+    grid = Grid(4, 4)
+    grid.open_wall(Position(0, 0), Wall.EAST)
+    grid.open_wall(Position(1, 0), Wall.EAST)
+    grid.open_wall(Position(2, 0), Wall.EAST)
+    grid.open_wall(Position(3, 0), Wall.SOUTH)
+    grid.open_wall(Position(3, 1), Wall.SOUTH)
+    grid.open_wall(Position(3, 2), Wall.SOUTH)
+    grid.open_wall(Position(3, 3), Wall.WEST)
+    grid.open_wall(Position(2, 3), Wall.WEST)
+    grid.open_wall(Position(1, 3), Wall.WEST)
+    grid.open_wall(Position(0, 3), Wall.NORTH)
+    grid.open_wall(Position(0, 2), Wall.NORTH)
+    grid.open_wall(Position(1, 0), Wall.SOUTH)
+    grid.open_wall(Position(2, 0), Wall.SOUTH)
+    grid.open_wall(Position(1, 3), Wall.NORTH)
+    grid.open_wall(Position(2, 3), Wall.NORTH)
     return grid
 
 

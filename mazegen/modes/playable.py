@@ -6,6 +6,9 @@ from mazegen.exceptions import InvalidMazeError
 from mazegen.grid import Grid, Position, Wall
 
 
+MAX_REAL_DEAD_ENDS = 2
+
+
 class PlayableMode:
     """Validate the connected base required by playable maze mode."""
 
@@ -35,6 +38,12 @@ class PlayableMode:
             rng,
             playable_positions(grid, reserved),
             2,
+        )
+        _reduce_dead_ends(
+            grid,
+            rng,
+            playable_positions(grid, reserved),
+            MAX_REAL_DEAD_ENDS,
         )
         _ensure_key_cells_reachable(
             grid,
@@ -247,6 +256,51 @@ def _ensure_key_cells_reachable(
         raise InvalidMazeError("playable maze center must be reachable")
     if not center_positions(grid) & reachable:
         raise InvalidMazeError("playable maze center must be reachable")
+
+
+def _reduce_dead_ends(
+    grid: Grid,
+    rng: Random,
+    playable_positions: set[Position],
+    max_dead_ends: int,
+) -> None:
+    dead_ends = find_dead_ends(grid, playable_positions)
+    while len(dead_ends) > max_dead_ends:
+        candidates = _dead_end_wall_candidates(
+            grid,
+            dead_ends,
+            playable_positions,
+        )
+        rng.shuffle(candidates)
+        opened_wall = False
+        for position, wall in candidates:
+            if _can_open_playable_wall(grid, position, wall, playable_positions):
+                grid.open_wall(position, wall)
+                opened_wall = True
+                break
+        if not opened_wall:
+            break
+        dead_ends = find_dead_ends(grid, playable_positions)
+
+    if len(find_dead_ends(grid, playable_positions)) > max_dead_ends:
+        raise InvalidMazeError(
+            "playable maze must not contain more than two dead ends"
+        )
+
+
+def _dead_end_wall_candidates(
+    grid: Grid,
+    dead_ends: set[Position],
+    playable_positions: set[Position],
+) -> list[tuple[Position, Wall]]:
+    candidates: list[tuple[Position, Wall]] = []
+    for position in dead_ends:
+        for neighbor, wall in grid.neighbors(position):
+            if neighbor not in playable_positions:
+                continue
+            if grid.cell_at(position).has_wall(wall):
+                candidates.append((position, wall))
+    return candidates
 
 
 def _internal_wall_candidates(
