@@ -50,6 +50,10 @@ class PlayableMode:
             reserved,
             reachable_playable_positions(grid, entry, reserved),
         )
+        if has_playable_open_3x3_area(grid, playable_positions(grid, reserved)):
+            raise InvalidMazeError(
+                "playable maze must not contain open 3x3 areas"
+            )
         return grid
 
 
@@ -225,8 +229,7 @@ def _ensure_minimum_loops(
     for position, wall in candidates:
         if count_playable_loops(grid, playable_positions) >= minimum_loops:
             return
-        if _can_open_playable_wall(grid, position, wall, playable_positions):
-            grid.open_wall(position, wall)
+        _open_wall_if_safe(grid, position, wall, playable_positions)
 
     if count_playable_loops(grid, playable_positions) < minimum_loops:
         raise InvalidMazeError("playable maze requires at least two loops")
@@ -274,8 +277,7 @@ def _reduce_dead_ends(
         rng.shuffle(candidates)
         opened_wall = False
         for position, wall in candidates:
-            if _can_open_playable_wall(grid, position, wall, playable_positions):
-                grid.open_wall(position, wall)
+            if _open_wall_if_safe(grid, position, wall, playable_positions):
                 opened_wall = True
                 break
         if not opened_wall:
@@ -301,6 +303,110 @@ def _dead_end_wall_candidates(
             if grid.cell_at(position).has_wall(wall):
                 candidates.append((position, wall))
     return candidates
+
+
+def _open_wall_if_safe(
+    grid: Grid,
+    position: Position,
+    wall: Wall,
+    playable_positions: set[Position],
+) -> bool:
+    if not _can_open_playable_wall(grid, position, wall, playable_positions):
+        return False
+    if _would_create_playable_open_3x3_area(
+        grid,
+        position,
+        wall,
+        playable_positions,
+    ):
+        return False
+    grid.open_wall(position, wall)
+    return True
+
+
+def _would_create_playable_open_3x3_area(
+    grid: Grid,
+    position: Position,
+    wall: Wall,
+    playable_positions: set[Position],
+) -> bool:
+    if grid.width < 3 or grid.height < 3:
+        return False
+    return any(
+        _is_playable_open_3x3_block_with_candidate(
+            grid,
+            Position(x, y),
+            playable_positions,
+            position,
+            wall,
+        )
+        for y in range(grid.height - 2)
+        for x in range(grid.width - 2)
+    )
+
+
+def _is_playable_open_3x3_block_with_candidate(
+    grid: Grid,
+    top_left: Position,
+    playable_positions: set[Position],
+    candidate_position: Position,
+    candidate_wall: Wall,
+) -> bool:
+    block_positions = {
+        Position(top_left.x + offset_x, top_left.y + offset_y)
+        for offset_y in range(3)
+        for offset_x in range(3)
+    }
+    if not block_positions <= playable_positions:
+        return False
+
+    for offset_y in range(3):
+        for offset_x in range(3):
+            position = Position(top_left.x + offset_x, top_left.y + offset_y)
+            if offset_x < 2 and not _wall_is_open_with_candidate(
+                grid,
+                position,
+                Wall.EAST,
+                candidate_position,
+                candidate_wall,
+            ):
+                return False
+            if offset_y < 2 and not _wall_is_open_with_candidate(
+                grid,
+                position,
+                Wall.SOUTH,
+                candidate_position,
+                candidate_wall,
+            ):
+                return False
+    return True
+
+
+def _wall_is_open_with_candidate(
+    grid: Grid,
+    position: Position,
+    wall: Wall,
+    candidate_position: Position,
+    candidate_wall: Wall,
+) -> bool:
+    if _candidate_edge_matches(position, wall, candidate_position, candidate_wall):
+        return True
+    return not grid.cell_at(position).has_wall(wall)
+
+
+def _candidate_edge_matches(
+    position: Position,
+    wall: Wall,
+    candidate_position: Position,
+    candidate_wall: Wall,
+) -> bool:
+    return (
+        position == candidate_position
+        and wall == candidate_wall
+    ) or (
+        position == candidate_position.move(candidate_wall)
+        and wall == candidate_wall.opposite
+    )
 
 
 def _internal_wall_candidates(

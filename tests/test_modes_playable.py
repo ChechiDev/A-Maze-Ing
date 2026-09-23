@@ -303,6 +303,52 @@ def test_playable_mode_dead_ends_do_not_open_walls_to_reserved() -> None:
     assert _open_edges_touching_reserved(grid, reserved) == set()
 
 
+def test_playable_mode_open_area_does_not_create_three_by_three() -> None:
+    grid = _connected_tree_grid_4x4_with_dead_ends()
+
+    PlayableMode().apply(
+        grid,
+        Random(42),
+        set(),
+        Position(0, 0),
+        Position(3, 3),
+    )
+
+    assert not has_playable_open_3x3_area(grid, set(grid.positions()))
+
+
+def test_playable_mode_open_area_preserves_loops_when_avoiding_three_by_three() -> None:
+    grid = _connected_tree_grid_3x3()
+
+    PlayableMode().apply(
+        grid,
+        Random(42),
+        set(),
+        Position(0, 0),
+        Position(2, 2),
+    )
+
+    assert count_playable_loops(grid, set(grid.positions())) >= 2
+    assert not has_playable_open_3x3_area(grid, set(grid.positions()))
+
+
+def test_playable_mode_open_area_ignores_reserved_cells() -> None:
+    grid = _connected_tree_grid_4x4_with_reserved_cell()
+    reserved = {Position(1, 1)}
+
+    PlayableMode().apply(
+        grid,
+        Random(42),
+        reserved,
+        Position(0, 0),
+        Position(3, 3),
+    )
+    playable = set(grid.positions()) - reserved
+
+    assert not has_playable_open_3x3_area(grid, playable)
+    assert _open_edges_touching_reserved(grid, reserved) == set()
+
+
 def test_corner_positions_handles_degenerate_grids() -> None:
     assert corner_positions(Grid(1, 1)) == {Position(0, 0)}
     assert corner_positions(Grid(1, 3)) == {
