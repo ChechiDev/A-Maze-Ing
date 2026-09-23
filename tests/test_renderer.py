@@ -1,4 +1,10 @@
-from ui.renderer import AsciiRenderer, LineRenderPalette, RenderPalette, Renderer
+from ui.renderer import (
+    AsciiRenderer,
+    LineRenderPalette,
+    LineRenderer,
+    RenderPalette,
+    Renderer,
+)
 
 from mazegen.generator import MazeResult
 from mazegen.grid import Grid, Position, Wall
@@ -189,6 +195,105 @@ def test_ascii_renderer_import_has_no_cli_side_effects() -> None:
     assert AsciiRenderer.__module__ == "ui.renderer.ascii_renderer"
 
 
+def test_line_renderer_satisfies_renderer_contract() -> None:
+    renderer: Renderer = LineRenderer()
+
+    rendered = renderer.render(_horizontal_result(), show_path=False)
+
+    assert isinstance(rendered, str)
+    assert rendered.endswith("\n")
+
+
+def test_line_renderer_contains_entry_and_exit() -> None:
+    rendered = LineRenderer().render(_horizontal_result(), show_path=False)
+
+    assert "E" in rendered
+    assert "S" in rendered
+
+
+def test_line_renderer_uses_line_symbols_not_hash_walls() -> None:
+    rendered = LineRenderer().render(_horizontal_result(), show_path=False)
+
+    assert "─" in rendered
+    assert "│" in rendered
+    assert "#" not in rendered
+
+
+def test_line_renderer_show_path_changes_output() -> None:
+    renderer = LineRenderer()
+    result = _path_result()
+
+    without_path = renderer.render(result, show_path=False)
+    with_path = renderer.render(result, show_path=True)
+
+    assert with_path != without_path
+    assert "·" in with_path
+
+
+def test_line_renderer_does_not_modify_grid() -> None:
+    result = _horizontal_result()
+    before = _wall_signature(result.grid)
+
+    LineRenderer().render(result, show_path=True)
+
+    assert _wall_signature(result.grid) == before
+
+
+def test_line_renderer_uses_custom_palette_symbols() -> None:
+    palette = LineRenderPalette(
+        horizontal="=",
+        vertical="!",
+        top_left="a",
+        top_right="b",
+        bottom_left="c",
+        bottom_right="d",
+        junction="+",
+        tee_up="u",
+        tee_down="n",
+        tee_left="l",
+        tee_right="r",
+        cross="x",
+        entry="I",
+        exit="O",
+        path="*",
+        pattern="X",
+        empty="_",
+    )
+
+    rendered = LineRenderer(palette).render(_path_result(), show_path=True)
+
+    assert "=" in rendered
+    assert "!" in rendered
+    assert "I" in rendered
+    assert "O" in rendered
+    assert "*" in rendered
+    assert "_" in rendered
+
+
+def test_line_renderer_distinguishes_fully_closed_cells() -> None:
+    palette = LineRenderPalette(pattern="X")
+
+    rendered = LineRenderer(palette).render(_pattern_like_result(), False)
+
+    assert "X" in rendered
+
+
+def test_line_renderer_horizontal_corridor_snapshot() -> None:
+    rendered = LineRenderer().render(_horizontal_result(), show_path=False)
+
+    assert rendered == "┌───┐\n│E S│\n└───┘\n"
+
+
+def test_line_renderer_vertical_corridor_snapshot() -> None:
+    rendered = LineRenderer().render(_vertical_result(), show_path=False)
+
+    assert rendered == "┌─┐\n│E│\n│ │\n│S│\n└─┘\n"
+
+
+def test_line_renderer_import_has_no_cli_side_effects() -> None:
+    assert LineRenderer.__module__ == "ui.renderer.line_renderer"
+
+
 class FakeRenderer:
     """Minimal renderer used to verify the protocol contract."""
 
@@ -215,6 +320,28 @@ def _path_result() -> MazeResult:
         entry=Position(0, 0),
         exit=Position(2, 0),
         shortest_path="EE",
+    )
+
+
+def _horizontal_result() -> MazeResult:
+    grid = Grid(2, 1)
+    grid.open_wall(Position(0, 0), Wall.EAST)
+    return MazeResult(
+        grid=grid,
+        entry=Position(0, 0),
+        exit=Position(1, 0),
+        shortest_path="E",
+    )
+
+
+def _vertical_result() -> MazeResult:
+    grid = Grid(1, 2)
+    grid.open_wall(Position(0, 0), Wall.SOUTH)
+    return MazeResult(
+        grid=grid,
+        entry=Position(0, 0),
+        exit=Position(0, 1),
+        shortest_path="S",
     )
 
 
