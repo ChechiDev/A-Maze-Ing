@@ -10,12 +10,29 @@ from mazegen.encoder import format_maze_output
 from mazegen.generator import MazeGenerator, MazeOptions, MazeResult
 from ui.config_loader import MazeConfig, load_config
 from ui.frame import FrameState, TerminalFrameComposer
-from ui.renderer import AsciiRenderer, RenderPalette
+from ui.renderer import LineRenderPalette, LineRenderer
+from ui.terminal_screen import TerminalScreen
 
 
 SUCCESS = 0
 FAILURE = 1
-_WALL_STYLES = ("#", "▓", "█")
+_LINE_STYLES = (
+    LineRenderPalette(),
+    LineRenderPalette(
+        horizontal="━",
+        vertical="┃",
+        top_left="┏",
+        top_right="┓",
+        bottom_left="┗",
+        bottom_right="┛",
+        junction="╋",
+        tee_up="┻",
+        tee_down="┳",
+        tee_left="┫",
+        tee_right="┣",
+        cross="╋",
+    ),
+)
 
 
 def main(
@@ -41,13 +58,18 @@ def main(
         config = load_config(args[0])
         result = _generate(config, regeneration_count=0)
         _write_output_file(config.output_file, result)
-        output_stream.write(
-            _compose_frame(result, show_path=True, wall_style_index=0),
-        )
         if result.warning is not None:
             error_stream.write(f"warning: {result.warning}\n")
         if interactive:
-            _run_interactions(config, result, output_stream, error_stream, input_stream)
+            with TerminalScreen(output_stream) as screen:
+                screen.render_frame(
+                    _compose_frame(result, show_path=True, style_index=0),
+                )
+                _run_interactions(config, result, screen, error_stream, input_stream)
+        else:
+            output_stream.write(
+                _compose_frame(result, show_path=True, style_index=0),
+            )
     except (ValueError, MazeError, OSError) as error:
         _write_error(error_stream, str(error))
         return FAILURE
@@ -85,12 +107,12 @@ def _regeneration_seed(seed: int | None, regeneration_count: int) -> int | None:
 def _run_interactions(
     config: MazeConfig,
     result: MazeResult,
-    stdout: TextIO,
+    screen: TerminalScreen,
     stderr: TextIO,
     input_stream: TextIO | None,
 ) -> None:
     show_path = True
-    wall_style_index = 0
+    style_index = 0
     regeneration_count = 0
     current_result = result
     while True:
@@ -99,64 +121,73 @@ def _run_interactions(
             regeneration_count += 1
             current_result = _generate(config, regeneration_count)
             _write_output_file(config.output_file, current_result)
-            stdout.write(
+            screen.render_frame(
                 _compose_frame(
                     current_result,
                     show_path,
-                    wall_style_index,
+                    style_index,
                     status="Re-generated maze.",
                 ),
             )
             continue
         if choice == "2":
             show_path = not show_path
-            stdout.write(
+            screen.render_frame(
                 _compose_frame(
                     current_result,
                     show_path,
-                    wall_style_index,
+                    style_index,
                     status=f"Shortest path {'shown' if show_path else 'hidden'}.",
                 ),
             )
             continue
         if choice == "3":
-            wall_style_index = (wall_style_index + 1) % len(_WALL_STYLES)
-            stdout.write(
+            style_index = (style_index + 1) % len(_LINE_STYLES)
+            screen.render_frame(
                 _compose_frame(
                     current_result,
                     show_path,
-                    wall_style_index,
+                    style_index,
                     status="Rotated wall style.",
                 ),
             )
             continue
         if choice == "4":
-            stdout.write("Goodbye.\n")
+            screen.render_frame(
+                _compose_frame(
+                    current_result,
+                    show_path,
+                    style_index,
+                    status="Goodbye.",
+                ),
+            )
             return
         status = "invalid choice: use 1, 2, 3, or 4"
         stderr.write(f"{status}\n")
-        stdout.write(
+        screen.render_frame(
             _compose_frame(
                 current_result,
                 show_path,
-                wall_style_index,
+                style_index,
                 status=status,
             ),
         )
 
 
-def _render(result: MazeResult, show_path: bool, wall_style_index: int) -> str:
-    palette = RenderPalette(wall=_WALL_STYLES[wall_style_index])
-    return AsciiRenderer(palette).render(result, show_path=show_path)
+def _render(result: MazeResult, show_path: bool, style_index: int) -> str:
+    return LineRenderer(_LINE_STYLES[style_index]).render(
+        result,
+        show_path=show_path,
+    )
 
 
 def _compose_frame(
     result: MazeResult,
     show_path: bool,
-    wall_style_index: int,
+    style_index: int,
     status: str = "",
 ) -> str:
-    rendered = _render(result, show_path, wall_style_index)
+    rendered = _render(result, show_path, style_index)
     return TerminalFrameComposer().compose(
         FrameState(
             maze_text=rendered,

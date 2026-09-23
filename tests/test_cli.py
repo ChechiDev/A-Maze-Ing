@@ -88,6 +88,9 @@ def test_cli_with_valid_config_writes_output_and_renders_maze(
     assert "Path: shown" in stdout.getvalue()
     assert "E" in stdout.getvalue()
     assert "S" in stdout.getvalue()
+    assert "─" in stdout.getvalue()
+    assert "│" in stdout.getvalue()
+    assert "#" not in stdout.getvalue()
     assert "warning:" in stderr.getvalue()
 
 
@@ -142,7 +145,11 @@ def test_entrypoint_script_with_valid_config_writes_output_and_renders(
     assert output_path.is_file()
     assert "E" in completed.stdout
     assert "S" in completed.stdout
+    assert "─" in completed.stdout
+    assert "│" in completed.stdout
     assert "=== A-Maze-ing ===" in completed.stdout
+    assert "┌" not in output_path.read_text(encoding="utf-8")
+    assert "─" not in output_path.read_text(encoding="utf-8")
 
 
 def test_entrypoint_script_without_arguments_returns_error() -> None:
@@ -168,7 +175,11 @@ def test_cli_interactive_quit_returns_success(tmp_path: Path) -> None:
     assert output_path.is_file()
     assert "=== A-Maze-ing ===" in stdout.getvalue()
     _assert_complete_frame(stdout.getvalue())
-    assert "Goodbye" in stdout.getvalue()
+    assert "Status: Goodbye." in stdout.getvalue()
+    assert "\x1b[2J" in stdout.getvalue()
+    assert "\x1b[H" in stdout.getvalue()
+    assert "\x1b[?25l" in stdout.getvalue()
+    assert stdout.getvalue().endswith("\x1b[?25h")
 
 
 def test_cli_interactive_toggle_path_rerenders(tmp_path: Path) -> None:
@@ -181,9 +192,10 @@ def test_cli_interactive_toggle_path_rerenders(tmp_path: Path) -> None:
     assert exit_code == 0
     assert "Shortest path hidden" in stdout.getvalue()
     assert "Path: hidden" in stdout.getvalue()
-    assert stdout.getvalue().count("Legend:") == 2
-    assert stdout.getvalue().count("Actions:") == 2
-    assert stdout.getvalue().count("=== A-Maze-ing ===") == 2
+    assert stdout.getvalue().count("Legend:") == 3
+    assert stdout.getvalue().count("Actions:") == 3
+    assert stdout.getvalue().count("=== A-Maze-ing ===") == 3
+    assert stdout.getvalue().count("\x1b[2J") == 1
 
 
 def test_cli_interactive_regenerate_rewrites_output(tmp_path: Path) -> None:
@@ -198,8 +210,9 @@ def test_cli_interactive_regenerate_rewrites_output(tmp_path: Path) -> None:
     assert output_path.is_file()
     assert output_path.read_text(encoding="utf-8")
     assert "Status: Re-generated maze." in stdout.getvalue()
-    assert stdout.getvalue().count("Legend:") == 2
-    assert stdout.getvalue().count("Actions:") == 2
+    assert stdout.getvalue().count("Legend:") == 3
+    assert stdout.getvalue().count("Actions:") == 3
+    assert "─" in stdout.getvalue()
 
 
 def test_cli_interactive_rotate_wall_style_rerenders(tmp_path: Path) -> None:
@@ -211,9 +224,9 @@ def test_cli_interactive_rotate_wall_style_rerenders(tmp_path: Path) -> None:
 
     assert exit_code == 0
     assert "Status: Rotated wall style." in stdout.getvalue()
-    assert stdout.getvalue().count("Legend:") == 2
-    assert stdout.getvalue().count("Actions:") == 2
-    assert "▓" in stdout.getvalue()
+    assert stdout.getvalue().count("Legend:") == 3
+    assert stdout.getvalue().count("Actions:") == 3
+    assert "━" in stdout.getvalue()
 
 
 def test_cli_interactive_invalid_choice_continues(tmp_path: Path) -> None:
@@ -227,8 +240,9 @@ def test_cli_interactive_invalid_choice_continues(tmp_path: Path) -> None:
     assert exit_code == 0
     assert "invalid choice" in stderr.getvalue()
     assert "Status: invalid choice: use 1, 2, 3, or 4" in stdout.getvalue()
-    assert stdout.getvalue().count("Legend:") == 2
-    assert stdout.getvalue().count("Actions:") == 2
+    assert stdout.getvalue().count("Legend:") == 3
+    assert stdout.getvalue().count("Actions:") == 3
+    assert stdout.getvalue().endswith("\x1b[?25h")
 
 
 def test_cli_interactive_eof_quits_cleanly(tmp_path: Path) -> None:
@@ -239,7 +253,8 @@ def test_cli_interactive_eof_quits_cleanly(tmp_path: Path) -> None:
     exit_code = main([str(config_path)], stdout, StringIO(), StringIO(""))
 
     assert exit_code == 0
-    assert "Goodbye" in stdout.getvalue()
+    assert "Status: Goodbye." in stdout.getvalue()
+    assert stdout.getvalue().endswith("\x1b[?25h")
 
 
 def test_input_only_exists_in_ui_cli() -> None:
