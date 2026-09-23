@@ -13,6 +13,14 @@ from mazegen import (
 from mazegen.exceptions import InvalidConfigurationError
 from mazegen.generator import MazeGenerator, MazeOptions, MazeResult
 from mazegen.grid import ALL_WALLS, Grid, Position, Wall
+from mazegen.modes.playable import (
+    corner_positions,
+    count_playable_loops,
+    find_dead_ends,
+    has_playable_open_3x3_area,
+    is_center_reachable,
+    reachable_playable_positions,
+)
 from mazegen.pattern42 import build_pattern42_positions
 from mazegen.validation import (
     count_loops,
@@ -196,6 +204,110 @@ def test_maze_generator_uses_injected_strategy() -> None:
     assert result.shortest_path == "E"
 
 
+def test_generator_applies_perfect_mode_when_perfect_true() -> None:
+    perfect_mode = FakeMode()
+    playable_mode = FakeMode()
+    options = MazeOptions(
+        width=2,
+        height=1,
+        entry=Position(0, 0),
+        exit=Position(1, 0),
+        perfect=True,
+    )
+
+    MazeGenerator(
+        strategy=FakeStrategy(),
+        perfect_mode=perfect_mode,
+        playable_mode=playable_mode,
+    ).generate(options)
+
+    assert perfect_mode.called
+    assert not playable_mode.called
+    assert perfect_mode.received_reserved == set()
+    assert perfect_mode.received_entry == options.entry
+    assert perfect_mode.received_exit == options.exit
+
+
+def test_generator_applies_playable_mode_when_perfect_false() -> None:
+    perfect_mode = FakeMode()
+    playable_mode = FakeMode()
+    options = MazeOptions(
+        width=2,
+        height=1,
+        entry=Position(0, 0),
+        exit=Position(1, 0),
+        perfect=False,
+    )
+
+    MazeGenerator(
+        strategy=FakeStrategy(),
+        perfect_mode=perfect_mode,
+        playable_mode=playable_mode,
+    ).generate(options)
+
+    assert not perfect_mode.called
+    assert playable_mode.called
+    assert playable_mode.received_reserved == set()
+    assert playable_mode.received_entry == options.entry
+    assert playable_mode.received_exit == options.exit
+
+
+def test_generator_perfect_true_output_has_no_loops() -> None:
+    options = MazeOptions(
+        width=6,
+        height=6,
+        entry=Position(0, 0),
+        exit=Position(5, 5),
+        perfect=True,
+        seed=42,
+    )
+
+    result = MazeGenerator().generate(options)
+    positions = set(result.grid.positions())
+
+    assert count_loops(result.grid, positions) == 0
+    assert result.shortest_path
+
+
+def test_generator_perfect_false_output_is_playable() -> None:
+    options = MazeOptions(
+        width=4,
+        height=4,
+        entry=Position(0, 0),
+        exit=Position(3, 3),
+        perfect=False,
+        seed=42,
+    )
+
+    result = MazeGenerator().generate(options)
+    playable = set(result.grid.positions())
+    reachable = reachable_playable_positions(result.grid, options.entry, set())
+
+    assert playable <= reachable
+    assert count_playable_loops(result.grid, playable) >= 2
+    assert len(find_dead_ends(result.grid, playable)) <= 2
+    assert corner_positions(result.grid) <= reachable
+    assert is_center_reachable(result.grid, reachable)
+    assert not has_playable_open_3x3_area(result.grid, playable)
+
+
+def test_generator_passes_pattern_reserved_to_mode() -> None:
+    playable_mode = FakeMode()
+    options = MazeOptions(
+        width=25,
+        height=20,
+        entry=Position(0, 0),
+        exit=Position(24, 19),
+        perfect=False,
+        seed=42,
+    )
+
+    MazeGenerator(playable_mode=playable_mode).generate(options)
+
+    assert playable_mode.called
+    assert playable_mode.received_reserved
+
+
 def test_maze_generator_applies_pattern42_when_size_allows() -> None:
     options = MazeOptions(
         width=25,
@@ -317,6 +429,31 @@ class FakeStrategy:
         _ = rng.random()
         assert reserved == set()
         grid.open_wall(Position(0, 0), Wall.EAST)
+        return grid
+
+
+class FakeMode:
+    """Minimal mode for dependency injection tests."""
+
+    def __init__(self) -> None:
+        self.called = False
+        self.received_reserved: set[Position] | None = None
+        self.received_entry: Position | None = None
+        self.received_exit: Position | None = None
+
+    def apply(
+        self,
+        grid: Grid,
+        rng: Random,
+        reserved: set[Position],
+        entry: Position,
+        exit: Position,
+    ) -> Grid:
+        _ = rng.random()
+        self.called = True
+        self.received_reserved = reserved
+        self.received_entry = entry
+        self.received_exit = exit
         return grid
 
 

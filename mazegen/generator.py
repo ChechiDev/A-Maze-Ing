@@ -5,6 +5,9 @@ from random import Random
 
 from mazegen.exceptions import InvalidConfigurationError
 from mazegen.grid import Grid, Position
+from mazegen.modes.base import MazeMode
+from mazegen.modes.perfect import PerfectMode
+from mazegen.modes.playable import PlayableMode
 from mazegen.pattern42 import build_pattern42_positions, pattern42_overlaps
 from mazegen.solver import ShortestPathSolver
 from mazegen.strategies.backtracker import RecursiveBacktrackerStrategy
@@ -54,10 +57,14 @@ class MazeGenerator:
         self,
         strategy: GenerationStrategy | None = None,
         solver: ShortestPathSolver | None = None,
+        perfect_mode: MazeMode | None = None,
+        playable_mode: MazeMode | None = None,
     ) -> None:
         """Create a generator with injectable strategy and solver defaults."""
         self._strategy = strategy or RecursiveBacktrackerStrategy()
         self._solver = solver or ShortestPathSolver()
+        self._perfect_mode = perfect_mode or PerfectMode()
+        self._playable_mode = playable_mode or PlayableMode()
 
     def generate(self, options: MazeOptions) -> MazeResult:
         """Generate a maze result without performing any UI or file I/O."""
@@ -70,6 +77,8 @@ class MazeGenerator:
             )
         reserved = set(pattern.positions)
         self._strategy.generate(grid, rng, reserved)
+        mode = self._perfect_mode if options.perfect else self._playable_mode
+        grid = mode.apply(grid, rng, reserved, options.entry, options.exit)
         shortest_path = self._solver.solve(grid, options.entry, options.exit)
         return MazeResult(
             grid=grid,
