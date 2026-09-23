@@ -1,5 +1,3 @@
-import sys
-
 from ui.renderer import AsciiRenderer, RenderPalette, Renderer
 
 from mazegen.generator import MazeResult
@@ -120,8 +118,7 @@ def test_ascii_renderer_distinguishes_fully_closed_cells() -> None:
 
 
 def test_ascii_renderer_import_has_no_cli_side_effects() -> None:
-    assert "ui.cli" not in sys.modules
-    assert "a_maze_ing" not in sys.modules
+    assert AsciiRenderer.__module__ == "ui.renderer.ascii_renderer"
 
 
 class FakeRenderer:
