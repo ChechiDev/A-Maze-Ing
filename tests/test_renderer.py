@@ -1,4 +1,4 @@
-from ui.renderer import AsciiRenderer, RenderPalette, Renderer
+from ui.renderer import AsciiRenderer, LineRenderPalette, RenderPalette, Renderer
 
 from mazegen.generator import MazeResult
 from mazegen.grid import Grid, Position, Wall
@@ -53,6 +53,59 @@ def test_render_palette_accepts_custom_symbols() -> None:
     assert palette.exit == "B"
     assert palette.pattern == "X"
     assert palette.empty == "_"
+
+
+def test_line_render_palette_uses_default_line_symbols() -> None:
+    palette = LineRenderPalette()
+
+    assert palette.horizontal == "─"
+    assert palette.vertical == "│"
+    assert palette.top_left == "┌"
+    assert palette.top_right == "┐"
+    assert palette.bottom_left == "└"
+    assert palette.bottom_right == "┘"
+    assert palette.junction == "┼"
+    assert palette.entry == "E"
+    assert palette.exit == "S"
+    assert palette.path == "·"
+    assert palette.pattern == "4"
+    assert palette.empty == " "
+    assert palette.horizontal != "#"
+    assert palette.vertical != "#"
+
+
+def test_line_render_palette_accepts_custom_symbols() -> None:
+    palette = LineRenderPalette(
+        horizontal="=",
+        vertical="!",
+        top_left="a",
+        top_right="b",
+        bottom_left="c",
+        bottom_right="d",
+        junction="+",
+        entry="I",
+        exit="O",
+        path="*",
+        pattern="X",
+        empty="_",
+    )
+
+    assert palette.horizontal == "="
+    assert palette.vertical == "!"
+    assert palette.top_left == "a"
+    assert palette.top_right == "b"
+    assert palette.bottom_left == "c"
+    assert palette.bottom_right == "d"
+    assert palette.junction == "+"
+    assert palette.entry == "I"
+    assert palette.exit == "O"
+    assert palette.path == "*"
+    assert palette.pattern == "X"
+    assert palette.empty == "_"
+
+
+def test_line_render_palette_imports_without_cli_side_effects() -> None:
+    assert LineRenderPalette.__module__ == "ui.renderer.base"
 
 
 def test_ascii_renderer_satisfies_renderer_contract() -> None:
