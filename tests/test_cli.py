@@ -84,6 +84,8 @@ def test_cli_with_valid_config_writes_output_and_renders_maze(
 
     assert exit_code == 0
     assert output_path.is_file()
+    _assert_complete_frame(stdout.getvalue())
+    assert "Path: shown" in stdout.getvalue()
     assert "E" in stdout.getvalue()
     assert "S" in stdout.getvalue()
     assert "warning:" in stderr.getvalue()
@@ -165,6 +167,7 @@ def test_cli_interactive_quit_returns_success(tmp_path: Path) -> None:
     assert exit_code == 0
     assert output_path.is_file()
     assert "=== A-Maze-ing ===" in stdout.getvalue()
+    _assert_complete_frame(stdout.getvalue())
     assert "Goodbye" in stdout.getvalue()
 
 
@@ -177,6 +180,9 @@ def test_cli_interactive_toggle_path_rerenders(tmp_path: Path) -> None:
 
     assert exit_code == 0
     assert "Shortest path hidden" in stdout.getvalue()
+    assert "Path: hidden" in stdout.getvalue()
+    assert stdout.getvalue().count("Legend:") == 2
+    assert stdout.getvalue().count("Actions:") == 2
     assert stdout.getvalue().count("=== A-Maze-ing ===") == 2
 
 
@@ -184,11 +190,16 @@ def test_cli_interactive_regenerate_rewrites_output(tmp_path: Path) -> None:
     output_path = tmp_path / "maze.txt"
     config_path = _write_config(tmp_path, output_path)
 
-    exit_code = main([str(config_path)], StringIO(), StringIO(), StringIO("1\n4\n"))
+    stdout = StringIO()
+
+    exit_code = main([str(config_path)], stdout, StringIO(), StringIO("1\n4\n"))
 
     assert exit_code == 0
     assert output_path.is_file()
     assert output_path.read_text(encoding="utf-8")
+    assert "Status: Re-generated maze." in stdout.getvalue()
+    assert stdout.getvalue().count("Legend:") == 2
+    assert stdout.getvalue().count("Actions:") == 2
 
 
 def test_cli_interactive_rotate_wall_style_rerenders(tmp_path: Path) -> None:
@@ -199,19 +210,25 @@ def test_cli_interactive_rotate_wall_style_rerenders(tmp_path: Path) -> None:
     exit_code = main([str(config_path)], stdout, StringIO(), StringIO("3\n4\n"))
 
     assert exit_code == 0
-    assert "Rotated wall style" in stdout.getvalue()
+    assert "Status: Rotated wall style." in stdout.getvalue()
+    assert stdout.getvalue().count("Legend:") == 2
+    assert stdout.getvalue().count("Actions:") == 2
     assert "▓" in stdout.getvalue()
 
 
 def test_cli_interactive_invalid_choice_continues(tmp_path: Path) -> None:
     output_path = tmp_path / "maze.txt"
     config_path = _write_config(tmp_path, output_path)
+    stdout = StringIO()
     stderr = StringIO()
 
-    exit_code = main([str(config_path)], StringIO(), stderr, StringIO("x\n4\n"))
+    exit_code = main([str(config_path)], stdout, stderr, StringIO("x\n4\n"))
 
     assert exit_code == 0
     assert "invalid choice" in stderr.getvalue()
+    assert "Status: invalid choice: use 1, 2, 3, or 4" in stdout.getvalue()
+    assert stdout.getvalue().count("Legend:") == 2
+    assert stdout.getvalue().count("Actions:") == 2
 
 
 def test_cli_interactive_eof_quits_cleanly(tmp_path: Path) -> None:
@@ -259,3 +276,14 @@ def _write_config(
         encoding="utf-8",
     )
     return config_path
+
+
+def _assert_complete_frame(output: str) -> None:
+    assert "=== A-Maze-ing ===" in output
+    assert "Legend: E = entry, S = exit, ·/. = path, 4 = 42 cell" in output
+    assert "Actions:" in output
+    assert "1. Re-generate a new maze" in output
+    assert "2. Show / Hide the shortest path" in output
+    assert "3. Rotate wall colours" in output
+    assert "4. Quit" in output
+    assert "Choice? " in output

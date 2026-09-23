@@ -47,5 +47,6 @@ def _actions_text() -> str:
         "1. Re-generate a new maze\n"
         "2. Show / Hide the shortest path\n"
         "3. Rotate wall colours\n"
-        "4. Quit"
+        "4. Quit\n"
+        "Choice? "
     )

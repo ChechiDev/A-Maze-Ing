@@ -9,6 +9,7 @@ from mazegen import MazeError
 from mazegen.encoder import format_maze_output
 from mazegen.generator import MazeGenerator, MazeOptions, MazeResult
 from ui.config_loader import MazeConfig, load_config
+from ui.frame import FrameState, TerminalFrameComposer
 from ui.renderer import AsciiRenderer, RenderPalette
 
 
@@ -40,7 +41,9 @@ def main(
         config = load_config(args[0])
         result = _generate(config, regeneration_count=0)
         _write_output_file(config.output_file, result)
-        output_stream.write(_render(result, show_path=True, wall_style_index=0))
+        output_stream.write(
+            _compose_frame(result, show_path=True, wall_style_index=0),
+        )
         if result.warning is not None:
             error_stream.write(f"warning: {result.warning}\n")
         if interactive:
@@ -91,29 +94,55 @@ def _run_interactions(
     regeneration_count = 0
     current_result = result
     while True:
-        stdout.write(_menu_text())
         choice = _read_choice(input_stream)
         if choice == "1":
             regeneration_count += 1
             current_result = _generate(config, regeneration_count)
             _write_output_file(config.output_file, current_result)
-            stdout.write("Re-generated maze.\n")
-            stdout.write(_render(current_result, show_path, wall_style_index))
+            stdout.write(
+                _compose_frame(
+                    current_result,
+                    show_path,
+                    wall_style_index,
+                    status="Re-generated maze.",
+                ),
+            )
             continue
         if choice == "2":
             show_path = not show_path
-            stdout.write(f"Shortest path {'shown' if show_path else 'hidden'}.\n")
-            stdout.write(_render(current_result, show_path, wall_style_index))
+            stdout.write(
+                _compose_frame(
+                    current_result,
+                    show_path,
+                    wall_style_index,
+                    status=f"Shortest path {'shown' if show_path else 'hidden'}.",
+                ),
+            )
             continue
         if choice == "3":
             wall_style_index = (wall_style_index + 1) % len(_WALL_STYLES)
-            stdout.write("Rotated wall style.\n")
-            stdout.write(_render(current_result, show_path, wall_style_index))
+            stdout.write(
+                _compose_frame(
+                    current_result,
+                    show_path,
+                    wall_style_index,
+                    status="Rotated wall style.",
+                ),
+            )
             continue
         if choice == "4":
             stdout.write("Goodbye.\n")
             return
-        stderr.write("invalid choice: use 1, 2, 3, or 4\n")
+        status = "invalid choice: use 1, 2, 3, or 4"
+        stderr.write(f"{status}\n")
+        stdout.write(
+            _compose_frame(
+                current_result,
+                show_path,
+                wall_style_index,
+                status=status,
+            ),
+        )
 
 
 def _render(result: MazeResult, show_path: bool, wall_style_index: int) -> str:
@@ -121,14 +150,19 @@ def _render(result: MazeResult, show_path: bool, wall_style_index: int) -> str:
     return AsciiRenderer(palette).render(result, show_path=show_path)
 
 
-def _menu_text() -> str:
-    return (
-        "=== A-Maze-ing ===\n"
-        "1. Re-generate a new maze\n"
-        "2. Show / Hide the shortest path\n"
-        "3. Rotate wall colours\n"
-        "4. Quit\n"
-        "Choice? "
+def _compose_frame(
+    result: MazeResult,
+    show_path: bool,
+    wall_style_index: int,
+    status: str = "",
+) -> str:
+    rendered = _render(result, show_path, wall_style_index)
+    return TerminalFrameComposer().compose(
+        FrameState(
+            maze_text=rendered,
+            show_path=show_path,
+            status=status,
+        ),
     )
 
 

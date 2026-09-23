@@ -29,6 +29,7 @@ def test_terminal_frame_includes_menu_actions() -> None:
     assert "2. Show / Hide the shortest path" in frame
     assert "3. Rotate wall colours" in frame
     assert "4. Quit" in frame
+    assert "Choice? " in frame
 
 
 def test_terminal_frame_reflects_shown_path_state() -> None:
@@ -85,6 +86,7 @@ def test_terminal_frame_snapshot() -> None:
         "2. Show / Hide the shortest path\n"
         "3. Rotate wall colours\n"
         "4. Quit\n"
+        "Choice? \n"
         "\n"
         "Status: Invalid choice.\n"
     )
