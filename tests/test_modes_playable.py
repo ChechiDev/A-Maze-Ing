@@ -349,6 +349,100 @@ def test_playable_mode_open_area_ignores_reserved_cells() -> None:
     assert _open_edges_touching_reserved(grid, reserved) == set()
 
 
+def test_playable_mode_final_state_is_connected_for_reasonable_grid() -> None:
+    grid = _connected_tree_grid_4x4_with_dead_ends()
+
+    PlayableMode().apply(
+        grid,
+        Random(42),
+        set(),
+        Position(0, 0),
+        Position(3, 3),
+    )
+    playable = set(grid.positions())
+    reachable = reachable_playable_positions(grid, Position(0, 0), set())
+
+    assert playable <= reachable
+
+
+def test_playable_mode_final_state_has_required_loops() -> None:
+    grid = _connected_tree_grid_4x4_with_dead_ends()
+
+    PlayableMode().apply(
+        grid,
+        Random(42),
+        set(),
+        Position(0, 0),
+        Position(3, 3),
+    )
+
+    assert count_playable_loops(grid, set(grid.positions())) >= 2
+
+
+def test_playable_mode_final_state_has_reachable_key_cells() -> None:
+    grid = _connected_tree_grid_4x4_with_dead_ends()
+
+    PlayableMode().apply(
+        grid,
+        Random(42),
+        set(),
+        Position(0, 0),
+        Position(3, 3),
+    )
+    reachable = reachable_playable_positions(grid, Position(0, 0), set())
+
+    assert corner_positions(grid) <= reachable
+    assert is_center_reachable(grid, reachable)
+
+
+def test_playable_mode_final_state_respects_dead_end_threshold() -> None:
+    grid = _connected_tree_grid_4x4_with_dead_ends()
+
+    PlayableMode().apply(
+        grid,
+        Random(42),
+        set(),
+        Position(0, 0),
+        Position(3, 3),
+    )
+
+    assert len(find_dead_ends(grid, set(grid.positions()))) <= 2
+
+
+def test_playable_mode_final_state_has_no_open_three_by_three() -> None:
+    grid = _connected_tree_grid_4x4_with_dead_ends()
+
+    PlayableMode().apply(
+        grid,
+        Random(42),
+        set(),
+        Position(0, 0),
+        Position(3, 3),
+    )
+
+    assert not has_playable_open_3x3_area(grid, set(grid.positions()))
+
+
+def test_playable_mode_final_state_excludes_reserved_cells() -> None:
+    grid = _connected_tree_grid_4x4_with_reserved_cell()
+    reserved = {Position(1, 1)}
+
+    PlayableMode().apply(
+        grid,
+        Random(42),
+        reserved,
+        Position(0, 0),
+        Position(3, 3),
+    )
+    playable = set(grid.positions()) - reserved
+    reachable = reachable_playable_positions(grid, Position(0, 0), reserved)
+
+    assert playable <= reachable
+    assert Position(1, 1) not in reachable
+    assert _open_edges_touching_reserved(grid, reserved) == set()
+    assert not has_playable_open_3x3_area(grid, playable)
+
+
 def test_corner_positions_handles_degenerate_grids() -> None:
     assert corner_positions(Grid(1, 1)) == {Position(0, 0)}
     assert corner_positions(Grid(1, 3)) == {

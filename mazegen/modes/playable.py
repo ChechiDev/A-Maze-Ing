@@ -50,10 +50,7 @@ class PlayableMode:
             reserved,
             reachable_playable_positions(grid, entry, reserved),
         )
-        if has_playable_open_3x3_area(grid, playable_positions(grid, reserved)):
-            raise InvalidMazeError(
-                "playable maze must not contain open 3x3 areas"
-            )
+        _validate_playable_final_state(grid, reserved, entry)
         return grid
 
 
@@ -259,6 +256,31 @@ def _ensure_key_cells_reachable(
         raise InvalidMazeError("playable maze center must be reachable")
     if not center_positions(grid) & reachable:
         raise InvalidMazeError("playable maze center must be reachable")
+
+
+def _validate_playable_final_state(
+    grid: Grid,
+    reserved: set[Position],
+    entry: Position,
+) -> None:
+    playable = playable_positions(grid, reserved)
+    reachable = reachable_playable_positions(grid, entry, reserved)
+    if playable - reachable:
+        raise InvalidMazeError("playable maze cells must be connected")
+    if count_playable_loops(grid, playable) < 2:
+        raise InvalidMazeError("playable maze requires at least two loops")
+    if not corner_positions(grid) <= reachable:
+        raise InvalidMazeError("playable maze corners must be reachable")
+    if not center_positions(grid) & reachable:
+        raise InvalidMazeError("playable maze center must be reachable")
+    if len(find_dead_ends(grid, playable)) > MAX_REAL_DEAD_ENDS:
+        raise InvalidMazeError(
+            "playable maze must not contain more than two dead ends"
+        )
+    if has_playable_open_3x3_area(grid, playable):
+        raise InvalidMazeError(
+            "playable maze must not contain open 3x3 areas"
+        )
 
 
 def _reduce_dead_ends(
