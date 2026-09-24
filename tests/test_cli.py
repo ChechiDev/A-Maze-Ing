@@ -91,6 +91,7 @@ def test_cli_with_valid_config_writes_output_and_renders_maze(
     assert "─" in stdout.getvalue()
     assert "│" in stdout.getvalue()
     assert "#" not in stdout.getvalue()
+    _assert_hex_output_file(output_path)
     assert "warning:" in stderr.getvalue()
 
 
@@ -209,6 +210,7 @@ def test_cli_interactive_regenerate_rewrites_output(tmp_path: Path) -> None:
     assert exit_code == 0
     assert output_path.is_file()
     assert output_path.read_text(encoding="utf-8")
+    _assert_hex_output_file(output_path)
     assert "Status: Re-generated maze." in stdout.getvalue()
     assert stdout.getvalue().count("Legend:") == 3
     assert stdout.getvalue().count("Actions:") == 3
@@ -227,6 +229,56 @@ def test_cli_interactive_rotate_wall_style_rerenders(tmp_path: Path) -> None:
     assert stdout.getvalue().count("Legend:") == 3
     assert stdout.getvalue().count("Actions:") == 3
     assert "━" in stdout.getvalue()
+
+
+def test_cli_interactive_toggle_path_does_not_rewrite_output(
+    tmp_path: Path,
+) -> None:
+    output_path = tmp_path / "maze.txt"
+    config_path = _write_config(tmp_path, output_path)
+
+    first_exit_code = main(
+        [str(config_path)],
+        StringIO(),
+        StringIO(),
+        interactive=False,
+    )
+    before = output_path.read_text(encoding="utf-8")
+    second_exit_code = main(
+        [str(config_path)],
+        StringIO(),
+        StringIO(),
+        StringIO("2\n4\n"),
+    )
+
+    assert first_exit_code == 0
+    assert second_exit_code == 0
+    assert output_path.read_text(encoding="utf-8") == before
+
+
+def test_cli_interactive_rotate_style_does_not_rewrite_output(
+    tmp_path: Path,
+) -> None:
+    output_path = tmp_path / "maze.txt"
+    config_path = _write_config(tmp_path, output_path)
+
+    first_exit_code = main(
+        [str(config_path)],
+        StringIO(),
+        StringIO(),
+        interactive=False,
+    )
+    before = output_path.read_text(encoding="utf-8")
+    second_exit_code = main(
+        [str(config_path)],
+        StringIO(),
+        StringIO(),
+        StringIO("3\n4\n"),
+    )
+
+    assert first_exit_code == 0
+    assert second_exit_code == 0
+    assert output_path.read_text(encoding="utf-8") == before
 
 
 def test_cli_interactive_invalid_choice_continues(tmp_path: Path) -> None:
@@ -302,3 +354,25 @@ def _assert_complete_frame(output: str) -> None:
     assert "3. Rotate wall colours" in output
     assert "4. Quit" in output
     assert "Choice? " in output
+
+
+def _assert_hex_output_file(output_path: Path) -> None:
+    output = output_path.read_text(encoding="utf-8")
+    grid_text, footer_text = output.split("\n\n", maxsplit=1)
+    grid_lines = grid_text.splitlines()
+    footer_lines = footer_text.splitlines()
+
+    assert grid_lines
+    assert all(line for line in grid_lines)
+    assert all(set(line) <= set("0123456789abcdef") for line in grid_lines)
+    assert len(footer_lines) >= 2
+    assert _is_coordinate(footer_lines[0])
+    assert _is_coordinate(footer_lines[1])
+    assert "┌" not in output
+    assert "─" not in output
+    assert "│" not in output
+
+
+def _is_coordinate(value: str) -> bool:
+    parts = value.split(",")
+    return len(parts) == 2 and all(part.isdigit() for part in parts)
