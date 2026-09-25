@@ -289,42 +289,73 @@ def _reduce_dead_ends(
     playable_positions: set[Position],
     max_dead_ends: int,
 ) -> None:
-    dead_ends = find_dead_ends(grid, playable_positions)
-    while len(dead_ends) > max_dead_ends:
-        candidates = _dead_end_wall_candidates(
-            grid,
-            dead_ends,
-            playable_positions,
-        )
-        rng.shuffle(candidates)
-        opened_wall = False
-        for position, wall in candidates:
-            if _open_wall_if_safe(grid, position, wall, playable_positions):
-                opened_wall = True
-                break
-        if not opened_wall:
-            break
-        dead_ends = find_dead_ends(grid, playable_positions)
+    """Open walls until at most `max_dead_ends` dead-ends remain.
 
-    if len(find_dead_ends(grid, playable_positions)) > max_dead_ends:
+    The queue holding the visit order is only rebuilt when it runs out, not
+    on every single wall opened: rebuilding it from the (still large) full
+    `dead_ends` set after each individual open is what made this scale
+    quadratically with the maze size on bigger grids.
+    """
+    dead_ends = find_dead_ends(grid, playable_positions)
+    queue = _shuffled_dead_end_queue(dead_ends, rng)
+    cursor = 0
+    resolved_since_rescan = False
+
+    while len(dead_ends) > max_dead_ends:
+        if cursor >= len(queue):
+            if not resolved_since_rescan:
+                break  # a full pass opened nothing: no safe wall remains
+            queue = _shuffled_dead_end_queue(dead_ends, rng)
+            cursor = 0
+            resolved_since_rescan = False
+            if not queue:
+                break
+
+        position = queue[cursor]
+        cursor += 1
+        if position not in dead_ends:
+            continue  # already resolved earlier in this pass
+
+        wall = _open_safe_dead_end_wall(grid, rng, position, playable_positions)
+        if wall is None:
+            continue
+        dead_ends.discard(position)
+        dead_ends.discard(position.move(wall))
+        resolved_since_rescan = True
+
+    if len(dead_ends) > max_dead_ends:
         raise InvalidMazeError(
             "playable maze must not contain more than two dead ends"
         )
 
 
-def _dead_end_wall_candidates(
-    grid: Grid,
+def _shuffled_dead_end_queue(
     dead_ends: set[Position],
+    rng: Random,
+) -> list[Position]:
+    queue = list(dead_ends)
+    rng.shuffle(queue)
+    return queue
+
+
+def _open_safe_dead_end_wall(
+    grid: Grid,
+    rng: Random,
+    position: Position,
     playable_positions: set[Position],
-) -> list[tuple[Position, Wall]]:
-    candidates: list[tuple[Position, Wall]] = []
-    for position in dead_ends:
-        for neighbor, wall in grid.neighbors(position):
-            if neighbor not in playable_positions:
-                continue
-            if grid.cell_at(position).has_wall(wall):
-                candidates.append((position, wall))
-    return candidates
+) -> Wall | None:
+    """Try this dead-end's own candidate walls and open the first safe one."""
+    walls = [
+        wall
+        for neighbor, wall in grid.neighbors(position)
+        if neighbor in playable_positions
+        and grid.cell_at(position).has_wall(wall)
+    ]
+    rng.shuffle(walls)
+    for wall in walls:
+        if _open_wall_if_safe(grid, position, wall, playable_positions):
+            return wall
+    return None
 
 
 def _open_wall_if_safe(
@@ -362,8 +393,32 @@ def _would_create_playable_open_3x3_area(
             position,
             wall,
         )
-        for y in range(grid.height - 2)
-        for x in range(grid.width - 2)
+        for x, y in _candidate_block_origins(grid, position, wall)
+    )
+
+
+def _candidate_block_origins(
+    grid: Grid,
+    position: Position,
+    wall: Wall,
+) -> tuple[tuple[int, int], ...]:
+    """Return the 3x3 block top-left origins that could contain the edge.
+
+    A 3x3 block only depends on the internal walls of its own 9 cells, so
+    opening one wall can only affect the (at most 4) blocks whose area
+    covers both cells joined by that wall -- checking every other block in
+    the grid is redundant work that scales with the whole maze instead of
+    with a single candidate.
+    """
+    neighbor = position.move(wall)
+    min_x, max_x = sorted((position.x, neighbor.x))
+    min_y, max_y = sorted((position.y, neighbor.y))
+    x_start, x_end = max(0, max_x - 2), min(grid.width - 3, min_x)
+    y_start, y_end = max(0, max_y - 2), min(grid.height - 3, min_y)
+    return tuple(
+        (x, y)
+        for y in range(y_start, y_end + 1)
+        for x in range(x_start, x_end + 1)
     )
 
 
