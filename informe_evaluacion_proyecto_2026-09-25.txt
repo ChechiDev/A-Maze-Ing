@@ -1,0 +1,315 @@
+A-MAZE-ING - INFORME DE EVALUACION DEL PROYECTO
+Fecha: 2026-09-25
+Subject usado como referencia: subject_Amazegin.pdf (version 2.2)
+Repositorio evaluado: /home/crblanco/Cursus_42/A_Maze_ing01
+
+==================================================================
+RESUMEN EJECUTIVO
+==================================================================
+El motor de generacion de laberintos (mazegen/) es la parte mas
+solida del proyecto. Lo que falta casi por completo son dos
+entregables OBLIGATORIOS y muy visibles en la evaluacion: el
+README y el paquete pip instalable (mazegen-*.whl / .tar.gz).
+
+Verificado en vivo durante esta revision (no solo leido):
+- pytest: 304 tests, todos pasan.
+- flake8: 0 errores.
+- mypy --strict: "Success: no issues found in 38 source files".
+
+ACTUALIZACION (sesion 2, mismo dia): se evaluo en vivo el
+algoritmo de generacion/recorrido y se encontro un bug de
+rendimiento grave en el modo por defecto (PERFECT=False), que
+hacia que grids de 80x80 o mas no terminaran de generarse. Ya fue
+diagnosticado, corregido y verificado (tests/flake8/mypy siguen en
+verde). Ver seccion 6 para el detalle completo.
+
+==================================================================
+1. LO QUE ESTA BIEN (verificado)
+==================================================================
+- Estructura del codigo (mazegen/ vs ui/ separados, arquitectura
+  limpia: grid, generator, modes/, strategies/, encoder, solver,
+  validation, pattern42).
+- Entry point exacto: python3 a_maze_ing.py config.txt
+- Config file: WIDTH, HEIGHT, ENTRY, EXIT, OUTPUT_FILE, PERFECT
+  + SEED opcional. Comentarios con #, config.txt por defecto en
+  el repo.
+- Codificacion hexadecimal de paredes correcta (bit N=1, E=2,
+  S=4, W=8), verificada contra la tabla del subject.
+- Formato del archivo de salida (grid, linea vacia, entry, exit,
+  path) coincide exactamente con el ejemplo del PDF.
+- Coherencia de paredes compartidas garantizada estructuralmente
+  (Grid.open_wall abre siempre ambos lados a la vez).
+- Paredes en el borde exterior garantizadas (Grid.neighbors solo
+  devuelve vecinos dentro de limites).
+- Prohibicion de areas abiertas 3x3 implementada
+  (has_open_3x3_area / has_playable_open_3x3_area) - requisito
+  sutil que suele ignorarse y aqui esta bien resuelto.
+- Patron "42" con celdas totalmente cerradas (pattern42.py,
+  mascara 11x7), con aviso en consola si el grid es muy pequeno
+  (tal como pide el PDF).
+- Modo PERFECT=True: backtracker genera arbol perfecto (sin
+  loops) + PerfectMode valida.
+- Modo PERFECT=False (estilo Pac-Man): conectividad total, 4
+  esquinas + centro abiertos, minimo 2 loops independientes,
+  maximo 2 dead-ends reales.
+- Reproducibilidad por seed (Random(options.seed)).
+- Solucion mas corta con N/E/S/W via BFS (solver.py).
+- Visualizacion ASCII + interacciones (regenerar, mostrar/ocultar
+  camino, "cambiar color") funcionando en ui/cli.py.
+- Clase unica reutilizable MazeGenerator en modulo standalone,
+  API limpia (MazeOptions, MazeResult).
+- LICENSE.md (MIT, permite reuso) cumple el requisito.
+- Makefile (install/run/debug/clean/lint/lint-strict) coincide
+  letra por letra con los flags exigidos por el subject.
+- CI en GitHub Actions corre pytest + mypy --strict + flake8 en
+  cada push/PR.
+- scripts/maze_analyzer.py (provisto por el subject) presente.
+
+Conclusion sobre el generador: nivel tecnico alto para este
+proyecto. Maneja hasta el requisito mas fino (areas 3x3, loops
+minimos, dead-ends, patron 42 opcional con warning).
+
+==================================================================
+2. LO QUE ESTA MAL O INCOMPLETO
+==================================================================
+
+--- CRITICO (bloquea evaluacion) ---
+
+a) README.md completamente vacio (0 bytes)
+   El subject dedica todo el Capitulo VII a esto y es obligatorio.
+   Falta el 100%:
+   - Primera linea en italica: "This project has been created as
+     part of the 42 curriculum by sperez-l, crblanco"
+   - Secciones Description, Instructions, Resources (+ como
+     usaron IA y para que tareas)
+   - Estructura completa del config file
+   - Algoritmo elegido (recursive backtracker) y por que
+   - Que parte del codigo es reutilizable y como
+   - Roles del equipo, planificacion, que funciono / que no,
+     herramientas usadas
+   Nota: tests/test_project_setup.py solo verifica que README.md
+   EXISTA como archivo, no que tenga contenido -> falso positivo,
+   por eso el test suite pasa en verde aunque el README este
+   vacio.
+
+b) No existe el paquete pip instalable (mazegen-*.whl o .tar.gz)
+   El Capitulo VI exige que el modulo reutilizable este
+   empaquetado como un unico archivo instalable por pip, en la
+   RAIZ del repo git, con nombre mazegen-*.
+   - No hay ningun .whl ni .tar.gz en el repo.
+   - pyproject.toml NO tiene seccion [build-system] (falta
+     declarar hatchling, setuptools o similar) - sin eso no se
+     puede correr "python -m build" correctamente.
+   - El .gitignore excluye dist/, build/, *.egg-info (correcto
+     para builds intermedios), pero el .whl FINAL si debe
+     commitearse en la raiz, y hoy no hay ningun archivo ni
+     mecanismo para generarlo.
+   Esto se evalua explicitamente en la defensa: "install the
+   needed tools and build your package again from your sources".
+
+--- IMPORTANTE (facil de arreglar) ---
+
+c) Manejo de excepciones no cubre errores inesperados
+   ui/cli.py solo atrapa (ValueError, MazeError, OSError). El
+   subject es explicito: "If your program crashes due to
+   unhandled exceptions during the review, it will be considered
+   non-functional." Casos no cubiertos:
+   - KeyboardInterrupt (Ctrl+C) durante el input() del menu
+     interactivo -> traceback crudo, no graceful.
+   - Cualquier excepcion inesperada no listada (a diferencia de
+     scripts/maze_analyzer.py, que si tiene un "except Exception"
+     de resguardo en su __main__; a_maze_ing.py no lo tiene).
+
+d) "Change maze wall colours" no cambia colores reales
+   La interaccion 3 del menu ("Rotate wall colours") rota entre
+   tres CARACTERES ASCII (#, ▓, █), no colores de terminal (ANSI).
+   El subject muestra una captura con colores reales (rosa/rojo/
+   naranja) via escape codes. Defendible como interpretacion,
+   pero un evaluador estricto puede objetar que no hay "colour"
+   real, solo cambio de glifo.
+
+e) Docstrings sin secciones Args/Returns
+   El subject pide estilo Google o NumPy documentando "purpose,
+   parameters, and returns". Las docstrings actuales son casi
+   todas de una linea (correctas pero minimas) - cumplen el
+   minimo, pero no siguen literalmente Google/NumPy con secciones
+   Args:/Returns:.
+
+--- BONUS no implementados (opcional, no bloquea) ---
+- Laberinto no-perfecto con CERO dead-ends por defecto (braided
+  board) - hoy tolera hasta 2.
+- Multiples algoritmos de generacion (la arquitectura con
+  GenerationStrategy Protocol ya esta lista para esto, solo falta
+  implementar una segunda estrategia, p.ej. Prim o Kruskal).
+- Animacion durante la generacion.
+- Colores especificos configurables para el patron "42"
+  (mencionado como opcional en el subject).
+
+==================================================================
+3. SOBRE EL COMENTARIO DEL COMPANERO ("falta el maze")
+==================================================================
+Si se refiere al algoritmo/generador en si: NO coincido. Es la
+parte mas robusta, testeada y completa del proyecto.
+
+Si se refiere a la visualizacion (por ejemplo que no hay version
+MLX/grafica): valido pero NO obligatorio - el subject pide ASCII
+O MLX, no ambos, asi que con ASCII ya se cumple el requisito.
+
+Hipotesis mas probable: al abrir el repo, lo primero que se ve
+(README) esta vacio y no hay nada que explique o "venda" el
+generador -> da la impresion de que falta mas de lo que realmente
+falta.
+
+==================================================================
+4. PORCENTAJE DE AVANCE ESTIMADO
+==================================================================
+Bloque del subject                                  Completitud
+--------------------------------------------------  -----------
+IV. Mandatory part (generacion, config, output)          ~95%
+V. Visual representation                                 ~85%
+VI. Code reusability (clase OK, docs NO, paquete NO)      ~40%
+VII. README Requirements                                   0%
+III. Common instructions (calidad, Makefile, tipado)      ~90%
+VIII. Bonuses (opcional)                                    0%
+
+ESTIMACION GLOBAL: ~70% del proyecto terminado.
+
+El nucleo tecnico esta en ~90-95%, pero dos entregables
+obligatorios (README y paquete pip) estan al 0%, y pesan mucho en
+una evaluacion de pares de 42 porque son lo primero que revisa un
+evaluador y demuestran que el codigo es reutilizable "para un
+proyecto futuro" (objetivo declarado del proyecto).
+
+==================================================================
+5. PRIORIDAD RECOMENDADA
+==================================================================
+1. README.md completo (mayor impacto, menor esfuerzo - todo el
+   contenido tecnico ya existe en el codigo, solo falta
+   escribirlo).
+2. Empaquetar mazegen como wheel/sdist y commitear el archivo en
+   la raiz + anadir [build-system] a pyproject.toml.
+3. Cubrir KeyboardInterrupt / excepciones inesperadas en
+   ui/cli.py.
+4. (Opcional) decidir si "colours" debe ser color ANSI real.
+5. (Opcional, bonus) segunda estrategia de generacion, dado que
+   la arquitectura ya lo soporta.
+6. [COMPLETADO en sesion 2] Bug de rendimiento en PlayableMode
+   (mazegen/modes/playable.py) que impedia generar grids grandes
+   en el modo por defecto. Ver seccion 6.
+
+==================================================================
+6. EVALUACION DEL RECORRIDO / GENERACION DEL LABERINTO (sesion 2,
+   2026-09-25) - PROBADO EN VIVO, NO SOLO LEIDO
+==================================================================
+Peticion del usuario: evaluar especificamente "el maze" (el
+algoritmo de generacion y el recorrido/solucion), su funcionalidad
+y correccion, dado un comentario del companero de equipo de que
+"el maze es lo que mas hace falta".
+
+Metodologia: se genero el laberinto con varios tamanos y modos
+(PERFECT=True/False), se comparo contra scripts/maze_analyzer.py
+(la herramienta de verificacion provista en el subject), y se
+midio el tiempo de generacion variando el tamano del grid.
+
+--- CORRECCION: CONFIRMADA AL 100% ---
+- PERFECT=False (25x15, patron 42 visible): analyzer.py reporta
+  conectividad total, 43 loops independientes, esquinas+centro
+  alcanzables, 2 dead-ends reales (dentro de tolerancia) ->
+  veredicto "Pac-Man-USABLE".
+- PERFECT=True (mismo grid): 0 loops, conectividad total ->
+  veredicto "PERFECT maze".
+- Coherencia de paredes: OK en ambos casos.
+- Reproducibilidad por seed: confirmada (misma seed -> archivo de
+  salida identico byte a byte en dos ejecuciones).
+- Regeneracion en el menu interactivo (opcion 1): confirmada,
+  produce un laberinto distinto cada vez.
+- Caso limite 2x2 (imposible en modo Pac-Man): falla con mensaje
+  claro ("error: playable maze requires at least two loops"), sin
+  traceback.
+Conclusion: el generador y el solver de camino mas corto (BFS) son
+correctos. NO se coincide con la afirmacion de que "el maze" sea
+lo que mas falta si se refiere al algoritmo/generador: es la parte
+mas robusta y testeada del proyecto.
+
+--- HALLAZGO: BUG DE RENDIMIENTO GRAVE EN EL MODO POR DEFECTO ---
+Se midio el tiempo de generacion en PERFECT=False (modo por
+defecto, el que usa config.txt) variando el tamano del grid:
+
+  10x10 ->   0.48s
+  20x20 ->   2.25s
+  30x30 ->  10.42s
+  40x40 ->  23.98s
+  50x50 ->  TIMEOUT (>30s)
+  80x80 ->  NO TERMINO en 3+ minutos (proceso matado manualmente)
+
+Como contraste, PERFECT=True con 60x60 (3600 celdas) tarda ~1
+segundo -> el problema esta aislado al post-procesado especifico
+del modo Pac-Man (insercion de loops + reduccion de dead-ends),
+no en la generacion base (recursive backtracker) ni en el patron
+42.
+
+Se usaron cProfile y mediciones de escalado para diagnosticar TRES
+causas, todas en mazegen/modes/playable.py, y se corrigieron las
+tres sin cambiar ningun comportamiento observable del laberinto
+(304 tests siguen pasando, flake8 y mypy --strict siguen limpios):
+
+1) _would_create_playable_open_3x3_area (para PlayableMode):
+   Antes de rebarrer TODO el grid (todos los bloques 3x3 posibles)
+   para decidir si UNA sola pared candidata crearia un area 3x3
+   abierta. Costo O(ancho x alto) por cada candidato evaluado.
+   FIX: se anadio _candidate_block_origins(), que calcula solo los
+   (como mucho 4) bloques 3x3 que realmente podrian contener esa
+   pared, en vez de barrer el grid entero. Costo O(1) por
+   candidato.
+
+2) _reduce_dead_ends: recalculaba find_dead_ends() (un barrido
+   O(celdas) de TODAS las posiciones jugables) despues de abrir
+   CADA pared individual, aunque abrir una pared solo puede
+   afectar el estado de las 2 celdas que conecta.
+   FIX: el set de dead-ends ahora se actualiza de forma
+   incremental (dead_ends.discard(...) sobre las 2 celdas
+   afectadas) en vez de recalcularse entero en cada iteracion.
+   Justificacion de correccion: abrir una pared solo puede
+   AUMENTAR el grado de las 2 celdas que conecta, nunca crear un
+   nuevo dead-end en otra celda.
+
+3) _dead_end_wall_candidates (bucle principal de
+   _reduce_dead_ends): en cada iteracion del bucle reconstruia la
+   lista de paredes candidatas iterando TODO el set de dead-ends
+   restante, aunque solo se resuelve un dead-end por iteracion ->
+   costo O(dead-ends^2) acumulado.
+   FIX: se reemplazo por una cola barajada una sola vez
+   (_shuffled_dead_end_queue) que se recorre con un cursor y solo
+   se reconstruye cuando se agota Y hubo progreso desde la ultima
+   reconstruccion (_open_safe_dead_end_wall). Pasa de
+   reconstruir-todo-cada-vez a una sola pasada amortizada.
+
+Verificacion tras los 3 fixes (mismos comandos, mismo hardware):
+
+  10x10   ->  0.31s
+  20x20   ->  1.38s
+  30x30   ->  2.81s
+  40x40   ->  2.29s
+  50x50   ->  3.44s
+  60x60   ->  6.02s
+  80x80   ->  3.17s
+  100x100 -> 23.69s
+  150x150 -> 33.64s   (antes: no terminaba ni con los 2 primeros
+                        fixes aplicados)
+
+Mejora: un grid de 80x80 paso de "no termina en 3+ minutos" a
+3.2 segundos. Un grid de 150x150 (22 500 celdas), que antes no
+terminaba, ahora se genera en 34 segundos. Persiste cierta
+variancia/crecimiento no lineal en tamanos muy grandes (100-150),
+pero ya no es un bloqueo practico para el uso normal del proyecto
+(demos, evaluacion, tamanos tipicos de 10-60).
+
+Regresion: pytest (304/304), flake8 (0 errores) y mypy --strict
+(0 errores) se re-ejecutaron despues de cada uno de los 3 fixes y
+siguen en verde. No hay tests en el repo que usen grids mayores a
+~25x25, por lo que este bug de rendimiento nunca habia sido
+detectado por la suite existente -- recomendable anadir un test
+de regresion de rendimiento (p.ej. generar un 60x60 con un limite
+de tiempo) para evitar que vuelva a pasar desapercibido.
+
+Archivo modificado: mazegen/modes/playable.py

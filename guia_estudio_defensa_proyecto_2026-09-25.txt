@@ -1,0 +1,1184 @@
+A-MAZE-ING - GUIA DE ESTUDIO, PRUEBAS Y DEFENSA DEL PROYECTO
+Fecha: 2026-09-25
+Repositorio: /home/crblanco/Cursus_42/A_Maze_ing01
+Companero de este documento: informe_evaluacion_proyecto_2026-09-25.txt
+(ese archivo dice QUE FALTA; este archivo te ensena COMO FUNCIONA TODO
+para que lo puedas explicar y modificar en vivo durante la evaluacion)
+
+==================================================================
+0. COMO USAR ESTE DOCUMENTO
+==================================================================
+Este documento esta pensado para que puedas defender el proyecto solo,
+aunque tu companero no este presente o te pregunten a ti especificamente.
+Orden de lectura recomendado:
+
+  1. Lee la seccion 2 (Glosario) PRIMERO. Todo el resto usa esos terminos
+     sin volver a explicarlos.
+  2. Lee la seccion 3 (Trace completo con ejemplo numerico). Es la forma
+     mas rapida de entender el flujo real sin leer codigo todavia.
+  3. Lee la seccion 4 en orden (esta ordenada de abajo hacia arriba: los
+     modulos sin dependencias primero, el orquestador al final -- asi
+     nunca lees algo que use algo que no conoces todavia).
+  4. Practica con la seccion 6 (como probarlo) en tu propia terminal
+     mientras lees la seccion 4 de cada archivo. Ver el resultado real
+     fija el conocimiento mucho mejor que solo leer.
+  5. Un dia antes (o unas horas antes) de la evaluacion: repasa la
+     seccion 7 (preguntas tipicas) y la seccion 10 (cheat sheet).
+  6. Si en la evaluacion piden modificar algo en vivo: seccion 8 te dice
+     exactamente en que archivo y funcion tocar segun el tipo de pedido.
+
+==================================================================
+1. MAPA MENTAL DEL PROYECTO
+==================================================================
+El proyecto tiene DOS capas totalmente separadas, y esa separacion es
+en si misma un punto que te pueden preguntar ("por que separaron el
+codigo asi?"):
+
+  mazegen/   -> el "motor" reutilizable. NO sabe nada de consola, menus,
+                archivos de configuracion ni impresion en pantalla. Es
+                logica pura: genera la estructura del laberinto en
+                memoria y la devuelve como objetos Python. Esta pensado
+                para poder importarse en OTRO proyecto futuro (ese es
+                literalmente el objetivo declarado del subject, capitulo
+                VI "Code reusability requirements").
+
+  ui/        -> la "aplicacion". Lee config.txt, llama a mazegen,
+                escribe el archivo de salida con el formato hexadecimal
+                exigido, dibuja el ASCII en pantalla, y maneja el menu
+                interactivo. Si mazegen es la libreria, ui/cli.py es "el
+                programa que la usa" (como cualquier proyecto futuro que
+                importe mazegen tendria que hacer).
+
+  a_maze_ing.py -> el archivo raiz que el subject exige por nombre. Son
+                literalmente 7 lineas: solo importa ui.cli.main y lo
+                ejecuta. TODA la logica real vive en los paquetes.
+
+Diagrama de dependencias (quien importa a quien):
+
+    a_maze_ing.py
+         |
+         v
+    ui/cli.py  --------------------> mazegen (el paquete completo)
+         |
+         v
+    ui/config_loader.py  -> mazegen/grid.py (solo usa la clase Position)
+    ui/renderer/*         -> mazegen/generator.py (usa MazeResult)
+                           -> mazegen/grid.py (usa ALL_WALLS, Position, Wall)
+
+Dentro de mazegen/, el orden real de dependencias (de mas basico a mas
+alto nivel) es:
+
+    grid.py  (Cell, Grid, Position, Wall -- la base de TODO)
+       |
+       +--> strategies/backtracker.py (genera el arbol/spanning tree)
+       +--> pattern42.py (calcula las celdas reservadas del "42")
+       +--> modes/perfect.py  \
+       +--> modes/playable.py  }-- validan y (playable) retocan el grid
+       +--> validation.py (helpers de grafos, los usa perfect.py)
+       +--> solver.py (BFS del camino mas corto)
+       +--> encoder.py (Grid -> texto hexadecimal)
+       |
+       v
+    generator.py  <-- el ORQUESTADOR. Junta todo lo anterior en un solo
+                       metodo: MazeGenerator.generate(options). Esta es
+                       LA funcion mas importante de todo el proyecto.
+                       Si solo puedes explicar una funcion en la
+                       evaluacion, que sea esta.
+
+Idea clave para explicar la arquitectura en una frase:
+"mazegen genera y valida la ESTRUCTURA del laberinto (que paredes estan
+abiertas o cerradas); ui la CONSUME para pintar y guardar, pero nunca al
+reves -- mazegen jamas importa nada de ui."
+
+==================================================================
+2. GLOSARIO DE CONCEPTOS CLAVE (leer antes que todo lo demas)
+==================================================================
+
+- Position(x, y): coordenadas PUBLICAS del laberinto, las mismas que usa
+  el config.txt y el archivo de salida (ENTRY=0,0 significa x=0,y=0).
+  x crece hacia la derecha, y crece HACIA ABAJO (como en pantalla, no
+  como en un plano cartesiano matematico). Position es un dataclass
+  frozen (inmutable) -- una vez creado no se puede modificar, solo se
+  crean posiciones nuevas con .move(wall).
+
+- Coordenadas internas (row, col): SOLO existen dentro de Grid._cells,
+  que es una tupla de tuplas indexada como _cells[y][x] (primero fila,
+  osea y, despues columna, osea x). Esto es un detalle de implementacion
+  que Position oculta: en TODO el resto del codigo (fuera de grid.py) se
+  usa Position(x, y), nunca (row, col) directo.
+
+- Wall (IntFlag): los 4 lados de una celda, codificados como bits:
+     NORTH = 1   (bit 0, el menos significativo)
+     EAST  = 2   (bit 1)
+     SOUTH = 4   (bit 2)
+     WEST  = 8   (bit 3)
+  Esto coincide EXACTO con la tabla del subject (seccion IV.5). Al ser
+  IntFlag, se pueden combinar con | (OR) y consultar con & (AND):
+  ALL_WALLS = NORTH | EAST | SOUTH | WEST = 15 = 0xF.
+
+- Cell: una celda individual. Nace con las 4 paredes cerradas
+  (_walls = ALL_WALLS). open_wall(wall) hace _walls &= ~wall (apaga ese
+  bit). walls (la propiedad publica) devuelve el bitmask de paredes
+  CERRADAS -- ese mismo numero, en hexadecimal, es literalmente el
+  digito que se escribe en el archivo de salida. No hay conversion ni
+  inversion: "closed walls bitmask" == "hex digit del output".
+
+- Grid: la matriz completa de celdas + las operaciones publicas sobre
+  ellas (in_bounds, cell_at, neighbors, open_wall, positions). El punto
+  MAS importante de Grid.open_wall(position, wall): abre la pared en
+  `position` Y AL MISMO TIEMPO la pared opuesta en el vecino. Por eso la
+  coherencia de paredes (que el subject exige explicitamente) esta
+  GARANTIZADA por diseno -- es fisicamente imposible generar un archivo
+  incoherente con este codigo, porque nunca existe una operacion que
+  abra un solo lado de una pared compartida.
+
+- "reserved" / celdas reservadas: el conjunto de posiciones que forman
+  el patron "42" (ver pattern42.py). Estas celdas se dejan con las 4
+  paredes cerradas SIEMPRE (nunca se tocan ni en la generacion ni en los
+  modos), por eso se ven como bloques solidos en el ASCII. El resto del
+  laberinto las trata como "agujeros" que no se pueden atravesar.
+
+- "playable_positions" / "transitables": todas las celdas del grid que
+  NO estan reservadas (grid completo menos las celdas del "42"). Toda la
+  logica de conectividad, loops y dead-ends opera sobre este subconjunto,
+  nunca sobre el grid completo.
+
+- Grado (degree) de una celda: cuantos vecinos tiene alcanzables a
+  traves de una pared ABIERTA (0 a 4). Una celda con grado 1 es un
+  "dead-end" (callejon sin salida) -- solo tiene una forma de entrar o
+  salir.
+
+- Loop / ciclo independiente: un camino alternativo que no es parte del
+  "arbol" minimo de conexion. Formula de teoria de grafos usada en el
+  codigo: loops = aristas_abiertas - nodos + componentes_conexas. Con
+  UNA sola componente conexa (el caso normal aqui), simplifica a
+  loops = aristas - nodos + 1. Si loops == 0, el grafo es un arbol (osea
+  un laberinto PERFECTO: un unico camino posible entre dos celdas
+  cualquiera). Si loops >= 1, hay al menos un camino alternativo.
+
+- Spanning tree (arbol de expansion): un subgrafo que conecta TODOS los
+  nodos usando el minimo de aristas posible (nodos - 1), sin ciclos. El
+  recursive backtracker construye exactamente esto. Es la base
+  matematica de un laberinto "perfecto".
+
+- BFS (Breadth-First Search / busqueda en anchura): algoritmo que
+  explora un grafo "por capas" (primero todos los vecinos a distancia 1,
+  despues distancia 2, etc.) usando una cola (FIFO). Garantiza encontrar
+  el camino MAS CORTO en un grafo sin pesos (como este laberinto, donde
+  cada paso vale lo mismo). Lo usa solver.py.
+
+- DFS con backtracking (busqueda en profundidad con retroceso): al
+  reves de BFS -- se mete lo mas profundo posible por un camino (usando
+  una pila / stack, LIFO) y cuando no puede avanzar mas, retrocede
+  (pop) al ultimo punto con opciones sin visitar. Lo usa
+  backtracker.py para "cavar" el laberinto.
+
+- Seed (semilla): el numero que inicializa el generador de numeros
+  aleatorios (random.Random(seed)). Con la misma seed, TODAS las
+  decisiones "al azar" del programa se repiten identicas -> mismo
+  laberinto. Sin seed (None), Random() usa el reloj del sistema -> cada
+  ejecucion es distinta.
+
+==================================================================
+3. TRACE COMPLETO: DE config.txt AL ARCHIVO DE SALIDA
+==================================================================
+Sigamos una ejecucion real, paso a paso, con un config chiquito para
+que puedas hacer el trace a mano si te lo piden en la evaluacion:
+
+    WIDTH=4
+    HEIGHT=4
+    ENTRY=0,0
+    EXIT=3,3
+    OUTPUT_FILE=maze.txt
+    PERFECT=True
+    SEED=1
+
+PASO 1 - a_maze_ing.py
+  `raise SystemExit(main())` donde main viene de ui.cli. Solo delega.
+
+PASO 2 - ui/cli.py: main()
+  - Valida que haya exactamente 1 argumento (el path del config).
+  - config = load_config("config.txt")  (ver PASO 3)
+  - result = _generate(config, regeneration_count=0)  (ver PASO 4)
+  - Escribe el archivo de salida con format_maze_output(...)
+  - Imprime el ASCII en pantalla con show_path=True
+  - Si hubo warning (ej. grid muy chico para el "42"), lo imprime
+  - Si es interactivo, entra al menu (_run_interactions)
+
+PASO 3 - ui/config_loader.py: load_config()
+  - Lee el archivo linea por linea, ignora vacias y las que empiezan
+    con #, parsea cada "KEY=VALUE" a un dict de strings.
+  - MazeConfig.model_validate(entries): Pydantic valida tipos, convierte
+    "0,0" -> Position(x=0, y=0), "True"/"False" -> bool, valida que
+    ENTRY/EXIT esten dentro del grid y sean distintas.
+  - Devuelve un objeto MazeConfig con: width=4, height=4, entry=(0,0),
+    exit=(3,3), output_file="maze.txt", perfect=True, seed=1.
+
+PASO 4 - ui/cli.py: _generate() -> mazegen/generator.py: generate()
+  Esta es LA funcion central. Con nuestro ejemplo (4x4, PERFECT=True,
+  seed=1):
+  a) rng = Random(1)  -- semilla fijada, todo el azar sale de aqui.
+  b) grid = Grid(4, 4)  -- 16 celdas, las 16 con las 4 paredes cerradas.
+  c) pattern = build_pattern42_positions(4, 4)
+     -> el patron "42" necesita 11x7 celdas minimo; 4x4 es demasiado
+        chico -> pattern.positions = set() (vacio) y
+        pattern.warning = "grid is too small for pattern 42".
+     -> reserved = set() (ninguna celda reservada en este ejemplo).
+  d) pattern42_overlaps(reserved, entry, exit) -> False (reserved esta
+     vacio), no hay error.
+  e) self._strategy.generate(grid, rng, reserved)
+     -> RecursiveBacktrackerStrategy "cava" las 16 celdas (ver detalle
+        de este algoritmo en la seccion 4.3). Resultado: un laberinto
+        PERFECTO (arbol, 15 aristas abiertas, 0 loops) que ya conecta
+        las 16 celdas entre si.
+  f) mode = self._perfect_mode (porque options.perfect es True)
+     -> PerfectMode.apply(grid, rng, reserved, entry, exit) SOLO
+        valida (no modifica nada): conectividad, sin loops, sin areas
+        3x3 abiertas, entry/exit dentro de la region conectada. Si todo
+        esta bien, devuelve el mismo grid sin tocarlo.
+  g) shortest_path = self._solver.solve(grid, entry=(0,0), exit=(3,3))
+     -> BFS desde (0,0) hasta (3,3): como el laberinto es un arbol, hay
+        EXACTAMENTE un camino posible, y BFS lo encuentra y lo devuelve
+        como texto, ej: "EESSEE" (5-6 pasos tipicos para un 4x4,
+        depende del arbol generado con seed=1).
+  h) Devuelve MazeResult(grid, entry, exit, shortest_path, warning=
+     "grid is too small for pattern 42").
+
+PASO 5 - mazegen/encoder.py: format_maze_output()
+  - Recorre cada fila (y de 0 a 3), cada columna (x de 0 a 3), y por
+    cada celda hace format(int(cell.walls), "x") -> un digito hex.
+    Ejemplo: si la celda (0,0) tiene abiertas EAST y SOUTH (cerradas
+    NORTH+WEST = 1+8 = 9), el digito sale "9".
+  - Junta las 4 filas (4 caracteres cada una), una linea vacia, despues
+    "0,0" (entry), "3,3" (exit), y la ruta "EESSEE".
+  - El archivo final queda asi (paredes de ejemplo, no exactas):
+        9351
+        a2a6
+        8592
+        c556
+
+        0,0
+        3,3
+        EESSEE
+
+PASO 6 - ui/cli.py imprime el ASCII (ver seccion 4.14) y entra al menu:
+        === A-Maze-ing ===
+        1. Re-generate a new maze
+        2. Show / Hide the shortest path
+        3. Rotate wall colours
+        4. Quit
+        Choice?
+
+Con este trace mental puedes responder CASI cualquier "que pasa si..."
+que te pregunten: solo hay que ubicar en cual de estos 6 pasos cae el
+cambio.
+
+==================================================================
+4. EXPLICACION FUNCION POR FUNCION
+==================================================================
+Orden: de las piezas mas basicas (sin dependencias) hacia el
+orquestador. Cada archivo dice: que hace, por que existe, y las
+funciones/metodos mas importantes con su logica exacta.
+
+------------------------------------------------------------------
+4.1 mazegen/exceptions.py (17 lineas)
+------------------------------------------------------------------
+Define 4 excepciones, todas heredando de MazeError (la base):
+  - InvalidMazeError: la estructura generada viola una regla del
+    dominio (ej. quedaron mas de 2 dead-ends, hay un area 3x3 abierta).
+  - InvalidConfigurationError: los parametros de entrada no pueden
+    producir un laberinto valido (ej. entry choca con el patron "42").
+  - UnreachableExitError: el solver no encontro camino entre entry y
+    exit (en teoria nunca deberia pasar si los modos validaron bien
+    antes, pero existe como red de seguridad).
+Por que existen: ui/cli.py atrapa "MazeError" (la clase base) en un solo
+except, asi que CUALQUIER error de dominio del motor se convierte
+automaticamente en un mensaje de consola limpio, nunca en un traceback.
+Pregunta tipica: "por que no usan simplemente ValueError?" Respuesta:
+para que quien use mazegen como libreria pueda distinguir "error de
+config" de "error de estructura interna" sin tener que parsear el texto
+del mensaje.
+
+------------------------------------------------------------------
+4.2 mazegen/grid.py (178 lineas) -- LA BASE DE TODO
+------------------------------------------------------------------
+- Wall(IntFlag): NORTH=1, EAST=2, SOUTH=4, WEST=8. Dos propiedades:
+    .opposite -> la pared contraria (NORTH<->SOUTH, EAST<->WEST). Se usa
+       para abrir el lado correspondiente en el vecino.
+    .delta -> el desplazamiento (dx, dy) para moverse en esa direccion.
+       NORTH=(0,-1), EAST=(1,0), SOUTH=(0,1), WEST=(-1,0).
+  _validate_single_wall() se llama en ambas propiedades para asegurar
+  que no se les pase una combinacion (ej. NORTH|EAST) por error --
+  serian invalidas semanticamente ("la opuesta de dos paredes juntas"
+  no tiene sentido).
+
+- Position(x, y): dataclass frozen. Solo tiene un metodo: move(wall) ->
+  devuelve una Position NUEVA (no modifica la actual, porque es
+  inmutable) sumando el delta de esa pared.
+
+- Cell: guarda un solo campo privado _walls (empieza en ALL_WALLS = 15).
+  has_wall/open_wall/close_wall operan con AND/OR de bits. No tiene
+  referencia a su posicion -- no sabe donde esta en el grid, eso lo
+  sabe Grid.
+
+- CellView: un wrapper de solo lectura sobre Cell, para exponer walls y
+  has_wall() sin exponer open_wall/close_wall a quien solo debe LEER el
+  grid (ej. el renderer). Es una forma barata de "solo lectura" sin usar
+  herencia ni ocultar metodos con guiones bajos.
+
+- Grid(width, height): guarda self._cells como tupla de tuplas de Cell,
+  indexada [y][x]. Metodos clave:
+    in_bounds(position) -> 0<=x<width and 0<=y<height.
+    cell_at(position) -> CellView (solo lectura, uso externo).
+    _mutable_cell_at(position) -> Cell real (uso interno del propio
+       Grid, para poder modificarlo).
+    neighbors(position) -> tupla de (vecino, pared) para las 4
+       direcciones que caen DENTRO del grid (si estas en el borde,
+       algunos lados simplemente no aparecen en la lista -- por eso
+       nunca se puede abrir una pared hacia afuera del grid, y por eso
+       los bordes exteriores quedan cerrados automaticamente: nadie
+       llama nunca a open_wall hacia una posicion fuera de rango).
+    open_wall(position, wall): la funcion MAS importante de esta clase.
+       Abre position.wall Y neighbor.wall.opposite AL MISMO TIEMPO.
+       Esto es lo que garantiza la coherencia de paredes exigida por el
+       subject -- es estructuralmente imposible violarla con esta API.
+    positions() -> todas las Position del grid en orden fila por fila
+       (y de 0 a height-1, x de 0 a width-1 dentro de cada fila).
+
+------------------------------------------------------------------
+4.3 mazegen/strategies/base.py + backtracker.py -- COMO SE "CAVA" EL LABERINTO
+------------------------------------------------------------------
+base.py define GenerationStrategy como un Protocol (interfaz
+estructural: cualquier clase con un metodo generate(grid, rng, reserved)
+-> Grid "es" una GenerationStrategy, sin necesidad de heredar de nada).
+Esto es lo que hace facil el bonus de "multiples algoritmos de
+generacion": solo hay que escribir OTRA clase con ese mismo metodo.
+
+backtracker.py: RecursiveBacktrackerStrategy.generate() -- TRACE PASO A
+PASO del algoritmo (memorizalo, es tipico que pidan explicarlo):
+
+  1. transitables = todas las posiciones del grid que NO estan
+     reservadas (ver 4.4).
+  2. unvisited = copia de transitables (el "pendiente por visitar").
+  3. MIENTRAS queden celdas sin visitar:
+     a. Elegir un punto de partida: se ordenan las no visitadas
+        (por y, luego x, para que el orden sea determinista) y se
+        elige una con rng.choice() -- asi, con la misma seed, siempre
+        se elige el mismo punto de partida.
+     b. stack = [start]; se quita start de unvisited.
+     c. MIENTRAS el stack no este vacio:
+        - current = stack[-1] (el tope, SIN sacarlo todavia).
+        - candidates = vecinos de current que son transitables Y
+          siguen sin visitar.
+        - Si NO hay candidatos: stack.pop() (retroceder -- este es el
+          "backtrack" del nombre del algoritmo).
+        - Si SI hay candidatos: elegir uno al azar (rng.choice),
+          grid.open_wall(current, wall_hacia_ese_vecino) (cava el
+          pasaje), sacar ese vecino de unvisited, stack.append(vecino)
+          (avanzar -- profundiza como un DFS).
+  4. El while exterior (paso 3) permite que si el area transitable
+     tuviera VARIAS islas separadas por el patron 42, cada una se cave
+     por separado -- en la practica, con la mascara del 42 tal como esta
+     disenada, siempre es una sola isla conectada.
+
+  Resultado garantizado matematicamente: al final, TODAS las celdas
+  transitables quedan conectadas usando EXACTAMENTE (num_transitables-1)
+  pasajes abiertos, sin ningun ciclo -- osea un SPANNING TREE = un
+  laberinto PERFECTO. Esto es cierto SIEMPRE, sin importar el tamano o
+  la seed: es una propiedad matematica del algoritmo DFS-con-backtrack
+  sobre un grafo conexo, no algo que se "valide" despues por separado.
+
+  Por que "recursive backtracker" si el codigo no usa recursion de
+  Python (def que se llama a si misma)?: Porque el algoritmo es
+  CONCEPTUALMENTE una recursion (visita, luego recursivamente visita un
+  vecino, y cuando no puede seguir, "retorna" al llamador). Aqui esta
+  implementado de forma ITERATIVA con una pila explicita (list usado
+  como stack) en vez de con llamadas recursivas de Python, justamente
+  para evitar RecursionError en laberintos grandes (Python tiene un
+  limite de profundidad de recursion, tipicamente 1000; un laberinto de
+  40x40 = 1600 celdas SI podria superarlo si fuera recursion real). Este
+  es un buen punto tecnico para mencionar si preguntan "por que no es
+  recursivo de verdad".
+
+------------------------------------------------------------------
+4.4 mazegen/pattern42.py -- EL PATRON "42" OBLIGATORIO
+------------------------------------------------------------------
+_PATTERN_42_MASK: una tupla de 7 strings de 11 caracteres cada uno,
+formando visualmente un "42" con '1' (celda reservada/cerrada) y '0'
+(celda libre) -- es literalmente un dibujo hecho con texto.
+
+build_pattern42_positions(width, height):
+  - Si el grid es mas chico que 11x7 (el tamano de la mascara), NO se
+    puede dibujar el patron -> devuelve Pattern42Result con positions
+    vacio y warning="grid is too small for pattern 42". Esto coincide
+    EXACTO con lo que pide el subject: "The '42' pattern may be omitted
+    in case the maze size does not allow it. Print an error message on
+    the console in that case."
+  - Si entra, calcula top_left centrado ((width-11)//2, (height-11)//2)
+    y devuelve el set de Position donde la mascara tiene '1'.
+
+pattern42_overlaps(positions, entry, exit): simplemente chequea si
+entry o exit caen dentro de las celdas reservadas -- si es asi,
+generator.py lanza InvalidConfigurationError ANTES de intentar generar
+nada (falla rapido con un mensaje claro).
+
+Dato util para modificacion en vivo: si te piden "cambiar el dibujo del
+42" o "poner otro numero", el UNICO lugar que hay que tocar es
+_PATTERN_42_MASK (y quizas _PATTERN_WIDTH/_PATTERN_HEIGHT si cambia el
+tamano). El resto del pipeline (generator.py, los modos, el encoder) no
+sabe ni le importa que forma tiene el patron, solo que existe un set de
+"celdas prohibidas".
+
+------------------------------------------------------------------
+4.5 mazegen/modes/base.py -- EL CONTRATO DE LOS MODOS
+------------------------------------------------------------------
+MazeMode (Protocol): apply(grid, rng, reserved, entry, exit) -> Grid.
+Tanto PerfectMode como PlayableMode implementan este mismo metodo, asi
+generator.py puede hacer:
+    mode = self._perfect_mode if options.perfect else self._playable_mode
+    grid = mode.apply(grid, rng, reserved, options.entry, options.exit)
+sin ningun "if" sobre CUAL modo es -- es polimorfismo estructural puro.
+Este es un buen ejemplo de patron "Strategy" para mencionar si preguntan
+sobre patrones de diseno usados.
+
+------------------------------------------------------------------
+4.6 mazegen/modes/perfect.py -- MODO PERFECT=True
+------------------------------------------------------------------
+PerfectMode.apply() NO MODIFICA el grid, solo lo VALIDA (a diferencia de
+PlayableMode que si lo modifica -- diferencia clave que hay que saber
+explicar). Pasos:
+  1. playable_positions = todo el grid menos reserved.
+  2. Si entry o exit no estan en playable_positions -> error.
+  3. reachable = BFS propio (_reachable_playable_positions) desde entry,
+     sin cruzar celdas reservadas.
+  4. Si sobra alguna celda playable que NO quedo en reachable -> error
+     ("perfect maze playable cells must be connected").
+  5. Si exit no esta en reachable -> error.
+  6. has_open_3x3_area(grid) (de validation.py) -> si hay alguna zona
+     3x3 completamente abierta -> error.
+  7. count_loops(grid, playable_positions) != 0 -> error (un perfecto no
+     puede tener ciclos).
+  8. Chequeo redundante extra: aristas_abiertas debe ser exactamente
+     len(playable_positions)-1 (la definicion matematica de arbol) --
+     doble verificacion de la misma propiedad por seguridad.
+  Por que esta bien que "solo valide" y no genere nada: porque el
+  backtracker (4.3) YA garantiza matematicamente que lo que genera es un
+  arbol perfecto. PerfectMode es una red de seguridad / assert, no un
+  paso de generacion. Si algun dia cambian el backtracker por otro
+  algoritmo con bugs, este modo lo detectaria.
+
+------------------------------------------------------------------
+4.7 mazegen/validation.py -- HELPERS GENERICOS DE GRAFOS
+------------------------------------------------------------------
+OJO, dato importante para tu defensa: este archivo SOLO lo usa
+modes/perfect.py. modes/playable.py tiene sus PROPIAS versiones
+internas equivalentes (count_playable_loops, has_playable_open_3x3_area,
+etc.) en vez de reusar este archivo. Es una pequena duplicacion de
+codigo que existe en el proyecto real -- si te preguntan "que
+mejorarian", esta es una respuesta honesta y facil de defender: "estas
+funciones podrian unificarse, ya reciben ambas un grid + un set de
+posiciones como parametro, la logica es identica".
+Funciones (todas reciben grid + un set de Position, genericas, no saben
+si esas posiciones son "reserved" o no -- esa distincion la decide quien
+las llama):
+  - reachable_positions(grid, start): BFS generico.
+  - count_open_edges(grid, positions): cuenta aristas abiertas ENTRE
+    posiciones del set dado (divide por 2 porque cada arista se cuenta
+    desde sus 2 extremos).
+  - count_loops(grid, positions): aplica la formula
+    aristas - nodos + componentes_conexas.
+  - is_connected(grid, positions): todas alcanzables desde cualquiera.
+  - has_wall_coherence(grid): recorre TODO el grid comparando cada
+    pared con la de su vecino opuesto -- en teoria esto SIEMPRE da True
+    en este proyecto porque Grid.open_wall() ya lo garantiza por
+    construccion; esta funcion existe como chequeo defensivo /
+    para tests, no porque haga falta en el flujo normal.
+  - has_open_3x3_area(grid): recorre cada posible esquina superior-
+    izquierda de un bloque 3x3 y revisa si las 12 paredes internas de
+    ese bloque (2 filas x 3 verticales + 3 filas x 2 horizontales) estan
+    todas abiertas.
+
+------------------------------------------------------------------
+4.8 mazegen/modes/playable.py -- MODO PERFECT=False (EL MAS GRANDE, 566 lineas)
+------------------------------------------------------------------
+Este es el archivo mas largo y el que tuvo los 3 bugs de rendimiento que
+arreglamos (documentados en informe_evaluacion_proyecto_2026-09-25.txt,
+seccion 6). Entenderlo bien te prepara para casi cualquier pregunta
+dificil de la evaluacion.
+
+PlayableMode.apply() -- a diferencia de PerfectMode, este SI MODIFICA el
+grid (abre paredes nuevas). Secuencia completa:
+  1. Validar que entry/exit esten dentro del grid y no sean celdas
+     reservadas.
+  2. _ensure_key_cells_available(): las 4 esquinas no pueden estar
+     reservadas, y al menos una celda del centro debe estar libre. Si el
+     patron "42" (por mala suerte de tamano) tapara una esquina o todo
+     el centro, esto falla ANTES de gastar tiempo generando nada.
+  3. Calcular "reachable" = BFS desde entry sobre las celdas playable
+     (sin cruzar reservadas). Si exit no esta ahi, o sobran celdas
+     playable no alcanzadas -> error (el backtracker YA deberia haber
+     garantizado conectividad total, esto es otra red de seguridad).
+  4. _ensure_minimum_loops(grid, rng, playable, minimo=2): TOMA el
+     arbol perfecto que dejo el backtracker y le ABRE paredes extra
+     hasta lograr al menos 2 loops independientes.
+       - Construye TODOS los pares (posicion, pared) internos posibles
+         (_internal_wall_candidates), los mezcla al azar.
+       - Por cada candidato: si ya se llego a 2 loops, corta (return).
+         Si no, intenta abrirlo (_open_wall_if_safe, que ademas chequea
+         que no se cree una zona 3x3 abierta).
+       - Como el grafo YA es un arbol (0 loops), CUALQUIER arista nueva
+         entre dos nodos ya conectados crea EXACTAMENTE 1 loop nuevo --
+         por eso alcanza con muy pocos intentos (normalmente 2-3) para
+         llegar a 2 loops, esta parte del algoritmo es barata.
+  5. _reduce_dead_ends(grid, rng, playable, maximo=2): la parte que
+     tenia el bug de rendimiento mas grave. Version ACTUAL (ya
+     arreglada):
+       - Calcula el set inicial de dead-ends (celdas con grado 1).
+       - Arma UNA cola barajada de esas celdas (_shuffled_dead_end_queue)
+         y la recorre con un cursor (SIN reconstruirla en cada paso,
+         esa era la parte lenta que arreglamos).
+       - Para cada dead-end en la cola: intenta abrir alguna de sus
+         paredes cerradas hacia un vecino playable
+         (_open_safe_dead_end_wall), siempre que no cree una zona 3x3
+         abierta. Si lo logra, ese dead-end (y potencialmente su vecino,
+         si tambien era dead-end) sale del set -- se actualiza con
+         dead_ends.discard(), NO recalculando todo de nuevo (ese era el
+         segundo bug que arreglamos: abrir una pared solo puede subir el
+         grado de las 2 celdas que conecta, nunca puede CREAR un
+         dead-end nuevo en otro lado, asi que nunca hace falta
+         re-escanear todo el grid).
+       - Si la cola se agota y TODAVIA sobran dead-ends por resolver, se
+         rearma la cola SOLO si en la vuelta anterior se logro abrir
+         algo (si no se logro nada, no tiene sentido reintentar, se
+         corta y mas abajo se lanza el error).
+  6. _ensure_key_cells_reachable(): recalcula reachable y vuelve a
+     chequear que las 4 esquinas Y el centro sigan siendo alcanzables
+     (por las dudas de que algun paso anterior rompiera algo -- no
+     deberia, pero es la filosofia "defensiva" de todo este archivo:
+     cada paso se revalida).
+  7. _validate_playable_final_state(): el chequeo FINAL, el mas
+     completo -- repite TODAS las condiciones exigidas por el subject
+     para el modo Pac-Man de una sola vez: conectividad total, >=2
+     loops, esquinas+centro alcanzables, <=2 dead-ends reales, sin zonas
+     3x3 abiertas. Si algo fallara (no deberia, pero por eso existe este
+     paso), lanza InvalidMazeError con un mensaje especifico.
+
+  Por que se valida TANTAS veces (parece redundante)?: es una decision
+  de diseno deliberada tipo "fail loudly, fail early, fail often" --
+  cada paso confia en el anterior pero lo vuelve a chequear, asi que si
+  algun dia se rompe algo (un bug nuevo, un cambio mal hecho), el
+  programa explota con un mensaje CLARO en el paso exacto donde algo
+  esta mal, en vez de producir silenciosamente un archivo de salida
+  invalido que solo se descubriria con el analyzer. Esto es DEFENDIBLE
+  y BUENO en una evaluacion -- es "correctness by construction + defense
+  in depth", un concepto real de ingenieria de software.
+
+  El chequeo anti-zona-3x3 (_would_create_playable_open_3x3_area /
+  _candidate_block_origins): dado que se va a abrir la pared entre
+  `position` y su vecino, calcula SOLO los (maximo 4) bloques 3x3 que
+  podrian llegar a contener esa arista especifica, y revisa si abrirla
+  completaria un bloque 3x3 totalmente abierto. Este es el fix de
+  rendimiento #1 que aplicamos (antes barria TODO el grid por cada
+  candidato).
+
+  MAX_REAL_DEAD_ENDS = 2 (constante al inicio del archivo): este es el
+  numero que el subject permite tolerar ("a couple are tolerated"). Si
+  te piden en vivo "que el maze no tenga NINGUN dead-end" (el bonus
+  mencionado en el subject), este es el numero a cambiar a 0 -- ver
+  seccion 8 para el detalle de ese cambio.
+
+------------------------------------------------------------------
+4.9 mazegen/solver.py -- EL CAMINO MAS CORTO (BFS)
+------------------------------------------------------------------
+ShortestPathSolver.solve(grid, start, end):
+  - Si start == end, devuelve "" (caso trivial).
+  - BFS clasico con una cola (deque): parte de start, visita cada vecino
+    alcanzable a traves de una pared ABIERTA (grid.cell_at(position).
+    has_wall(wall) siendo False), y guarda en `parents` de donde vino
+    cada celda y por cual pared.
+  - En cuanto se visita `end`, se corta inmediatamente (no hace falta
+    seguir explorando -- BFS garantiza que la PRIMERA vez que se llega a
+    un nodo es por el camino mas corto posible, esa es la propiedad
+    fundamental de BFS en grafos sin peso).
+  - _reconstruct_path(): camina hacia atras desde end hasta start
+    siguiendo `parents`, junta las paredes recorridas, las invierte
+    (porque se reconstruyo al reves) y las convierte a letras N/E/S/W.
+  - Si nunca se llega a end (no deberia pasar, los modos ya validaron
+    conectividad antes) -> UnreachableExitError.
+Complejidad: O(V+E) -- cada celda y cada pared se visita como maximo una
+vez. Para cualquier tamano de laberinto razonable esto es practicamente
+instantaneo (a diferencia del bug que arreglamos en playable.py, que
+estaba en otra parte del pipeline).
+
+------------------------------------------------------------------
+4.10 mazegen/encoder.py -- Grid -> TEXTO HEXADECIMAL
+------------------------------------------------------------------
+encode_cell_walls(walls) -> format(int(walls), "x"): convierte el
+bitmask de paredes cerradas a UN digito hexadecimal en minuscula.
+encode_grid_row / encode_grid: arman fila por fila.
+format_maze_output(grid, entry, exit, path): arma el archivo COMPLETO
+tal como lo exige el subject -- filas, linea vacia, "x,y" de entry,
+"x,y" de exit, el path, TODO terminado en \n. Este es el unico lugar del
+proyecto donde se construye el formato de archivo exacto -- si te piden
+"cambiar el formato de salida" en vivo, es aqui.
+
+------------------------------------------------------------------
+4.11 mazegen/generator.py -- EL ORQUESTADOR (LA FUNCION MAS IMPORTANTE)
+------------------------------------------------------------------
+Ya recorrido en detalle en la seccion 3 (paso 4). Puntos extra para la
+defensa:
+
+- MazeOptions (dataclass frozen): width, height, entry, exit, perfect,
+  seed. Su __post_init__ valida invariantes basicas (medidas positivas,
+  entry/exit dentro de rango, entry != exit) -- esto pasa AUNQUE uses
+  mazegen como libreria sin pasar por ui/config_loader.py, porque es
+  parte del propio paquete reutilizable (la validacion de
+  config_loader.py es ADICIONAL, especifica de leer un archivo de
+  texto; esta validacion de MazeOptions es la que protege la API en si).
+
+- MazeResult (dataclass frozen): grid, entry, exit, shortest_path,
+  warning (Optional). Es literalmente el "objeto de retorno" publico de
+  toda la libreria -- todo lo que un proyecto futuro necesitaria para
+  usar este generador sale de aca.
+
+- MazeGenerator.__init__ recibe strategy/solver/perfect_mode/
+  playable_mode como parametros OPCIONALES (con default None ->
+  usa las implementaciones reales). Esto es INYECCION DE DEPENDENCIAS:
+  permite en los tests reemplazar, por ejemplo, la estrategia de
+  generacion por una falsa/controlada sin tocar el resto del pipeline.
+  Es tambien lo que hace trivial agregar el bonus de "multiples
+  algoritmos": construyes MazeGenerator(strategy=OtraEstrategia()) y
+  todo el resto (modos, solver, encoder) sigue funcionando igual sin
+  cambiar una linea.
+
+- generate(options): el metodo de 12 lineas que hace TODO el trabajo
+  (ver seccion 3, paso 4, letras a-h). Memorizalo en este orden:
+      1) crear rng con la seed
+      2) crear grid vacio
+      3) calcular celdas reservadas del "42"
+      4) validar que entry/exit no choquen con el "42"
+      5) generar el arbol base (strategy.generate)
+      6) aplicar el modo (perfect valida / playable valida+modifica)
+      7) resolver el camino mas corto (solver.solve)
+      8) empaquetar todo en un MazeResult
+
+------------------------------------------------------------------
+4.12 mazegen/__init__.py -- LA "PUERTA DE ENTRADA" PUBLICA DEL PAQUETE
+------------------------------------------------------------------
+Solo re-exporta (con __all__) las clases que un usuario externo del
+paquete deberia necesitar: Grid, Position, Wall, MazeGenerator,
+MazeOptions, MazeResult, y las excepciones. Asi, alguien que instale
+mazegen puede hacer simplemente:
+    from mazegen import MazeGenerator, MazeOptions, Position
+sin tener que saber que existen submodulos internos como
+modes/playable.py o strategies/backtracker.py. Esto ES, literalmente, la
+"corta documentacion de como instanciar y usar el generador" que pide
+el subject en el capitulo VI -- salvo que hoy esa documentacion en
+prosa no esta escrita en ningun lado (ver el otro informe, hallazgo
+critico "a"). Si te piden mostrar un ejemplo de uso como libreria en
+vivo, este es el ejemplo minimo (podrias necesitar escribirlo a mano):
+
+    from mazegen import MazeGenerator, MazeOptions, Position
+    options = MazeOptions(
+        width=10, height=10,
+        entry=Position(0, 0), exit=Position(9, 9),
+        perfect=False, seed=42,
+    )
+    result = MazeGenerator().generate(options)
+    print(result.shortest_path)          # ej: "EESSEE..."
+    print(result.grid.cell_at(Position(0, 0)).walls)  # bitmask int
+
+------------------------------------------------------------------
+4.13 ui/config_loader.py -- LEER Y VALIDAR config.txt
+------------------------------------------------------------------
+MazeConfig es un modelo Pydantic (BaseModel). Detalles importantes:
+- ConfigDict(extra="forbid"): CUALQUIER clave en el archivo que no sea
+  WIDTH/HEIGHT/ENTRY/EXIT/OUTPUT_FILE/PERFECT/SEED hace fallar la carga
+  con "Extra inputs are not permitted" (LO VERIFICAMOS EN VIVO: probamos
+  agregar ALGORITHM=prim y efectivamente falla). Es una decision de
+  diseno defendible ("asi detectamos typos en el config en vez de
+  ignorarlos silenciosamente"), pero hay que saber explicarla si
+  preguntan por que no acepta claves nuevas libremente pese a que el
+  subject dice "You may add additional keys ... if useful" -- la
+  respuesta correcta es: "si querramos soportar una clave nueva, hay
+  que agregarla explicitamente como Field en este modelo, es una
+  decision consciente de validar estricto en vez de aceptar cualquier
+  cosa".
+- Los alias (Field(alias="WIDTH", ...)) son lo que permite que el
+  archivo use MAYUSCULAS (como pide el subject) mientras el codigo
+  Python usa snake_case normal (width, height, etc.) -- Pydantic mapea
+  uno a otro automaticamente.
+- _parse_position (field_validator): convierte el string "x,y" en un
+  Position real, validando que sean exactamente 2 partes numericas.
+- _parse_bool (field_validator): SOLO acepta los strings literales
+  "True" o "False" (sin importar mayus/minus por el .lower()) -- "1",
+  "yes", "0" fallan a proposito, para exigir el formato exacto que pide
+  el subject (PERFECT=True / PERFECT=False).
+- _validate_positions (model_validator, corre DESPUES de validar cada
+  campo individual): chequea que entry y exit esten dentro de
+  width/height y sean distintas.
+- parse_config_lines(): el parser de texto plano en si (separado de
+  Pydantic) -- ignora lineas vacias y comentarios (#), separa en KEY=
+  VALUE por el primer "=", detecta claves duplicadas.
+
+------------------------------------------------------------------
+4.14 ui/renderer/base.py + ascii_renderer.py -- EL DIBUJO EN PANTALLA
+------------------------------------------------------------------
+base.py: RenderPalette (dataclass) define los caracteres usados:
+  wall="#", path=".", entry="E", exit="S", pattern="4", empty=" ".
+  Renderer es otro Protocol (mismo patron que MazeMode/
+  GenerationStrategy): cualquier clase con render(result, show_path)
+  "es" un Renderer -- asi seria facil, en teoria, agregar despues un
+  renderer distinto (ej. uno con colores ANSI reales, o un renderer MLX)
+  sin tocar ui/cli.py mas que la linea donde se instancia.
+
+ascii_renderer.py: AsciiRenderer.render() -- como se "dibuja" el grid:
+  - El canvas de texto es MAS GRANDE que el grid logico: cada celda
+    ocupa una posicion "central" en una grilla de
+    (2*width+1) x (2*height+1) caracteres, y entre cada par de celdas
+    hay una posicion "de pared" que se pinta vacio si esa pared esta
+    abierta. Esto es lo que permite dibujar las paredes COMO paredes
+    (lineas entre celdas) en vez de solo simbolos dentro de cada celda.
+    _canvas_coordinates(position) -> (y*2+1, x*2+1) es la formula que
+    convierte una Position logica en su posicion central en el canvas.
+  - _build_canvas(): arranca el canvas TODO lleno del caracter de pared,
+    despues por cada celda marca su centro como "vacio" (o "4" si es una
+    celda completamente cerrada del patron 42 -- cell.walls==ALL_WALLS),
+    y por cada pared ABIERTA de esa celda, vacia tambien la posicion
+    intermedia hacia ese vecino.
+  - _draw_path(): si show_path=True, recorre result.shortest_path letra
+    por letra (cada letra es un Wall via _PATH_STEPS), va moviendose con
+    position.move(wall), y marca cada posicion intermedia con el
+    caracter "." (salvo entry/exit, que se dejan para sus propios
+    simbolos).
+  - _mark_position(): pinta entry con "E" y exit con "S" AL FINAL,
+    encima de cualquier otra cosa (para que nunca se tapen con el
+    camino).
+
+------------------------------------------------------------------
+4.15 ui/cli.py -- EL FLUJO COMPLETO DE LA APLICACION Y EL MENU
+------------------------------------------------------------------
+main(argv, stdout, stderr, input_stream, interactive): notar que TODOS
+los canales de entrada/salida son parametros opcionales (con default a
+sys.stdout/sys.stderr/input real) -- esto es lo que permite testear el
+CLI completo sin tocar la consola real (los tests le pasan streams
+falsos de tipo StringIO). Es otro punto bueno de diseno para mencionar.
+
+Flujo (ya visto en la seccion 3): valida argc==1, carga config, genera,
+escribe archivo, imprime ASCII, imprime warning si existe, entra al
+menu si interactive=True.
+
+_run_interactions(): el loop del menu. show_path y wall_style_index son
+variables de ESTADO que persisten entre iteraciones del menu (no se
+resetean cada vez que se imprime):
+  - opcion "1" (regenerar): regeneration_count += 1, y llama a
+    _generate() de nuevo con una seed DISTINTA (ver
+    _regeneration_seed) -- por eso cada regeneracion da un laberinto
+    distinto aunque el config tenga una SEED fija. Tambien re-escribe el
+    archivo de salida en disco (no solo la pantalla).
+  - opcion "2" (mostrar/ocultar camino): toggle simple de show_path.
+  - opcion "3" (rotar colores): wall_style_index avanza ciclicamente
+    entre 3 estilos ("#", "▓", "█") -- ESTO ES SOLO CAMBIO DE CARACTER,
+    NO codigo de color ANSI real (ver el informe de evaluacion, hallazgo
+    "d" -- es una decision que hay que saber defender o mejorar si
+    preguntan).
+  - opcion "4": sale.
+  - cualquier otra cosa: mensaje de error a stderr, vuelve a mostrar el
+    menu (no se cae ni se traba).
+
+_regeneration_seed(seed, regeneration_count): logica de la seed en cada
+regeneracion --
+  - regeneration_count==0 -> usa la seed original del config (o None).
+  - si la seed original es None -> usa el propio regeneration_count
+    como seed (1, 2, 3, ... en cada regeneracion -- garantiza que cada
+    regeneracion sea DIFERENTE de la anterior incluso sin seed en el
+    config, de forma reproducible si hiciera falta debug).
+  - si la seed original SI existe -> seed_original + regeneration_count.
+
+_read_choice(): lee una linea de input_stream (o de input() real si es
+None). Si el stream se termina (EOF, linea vacia ""), interpreta eso
+como elegir "4" (salir) -- asi un Ctrl+D no deja el programa colgado.
+OJO: esto NO cubre Ctrl+C (KeyboardInterrupt) -- ver el informe de
+evaluacion, hallazgo "c", es un hueco real que conviene conocer.
+
+------------------------------------------------------------------
+4.16 a_maze_ing.py (7 lineas)
+------------------------------------------------------------------
+"""Mandatory entry point for A-Maze-ing."""
+from ui.cli import main as main
+if __name__ == "__main__":
+    raise SystemExit(main())
+Nada mas. El nombre del archivo esta fijado porque el subject lo exige
+literal ("a_maze_ing.py is your main program file. You must use this
+name."). raise SystemExit(main()) hace que el codigo de salida del
+proceso (0 = exito, 1 = fallo) sea el que devuelve main(), como exige
+cualquier CLI bien comportado.
+
+------------------------------------------------------------------
+4.17 scripts/maze_analyzer.py -- HERRAMIENTA PROVISTA POR EL SUBJECT
+------------------------------------------------------------------
+No es codigo que ustedes hayan disenado desde cero (el subject dice
+explicitamente "An analysis script is also provided with this
+subject"), pero es MUY util saber usarlo porque probablemente el
+evaluador tambien lo use. Lee un archivo de salida y reporta:
+  - coherencia de paredes (deberia SIEMPRE dar OK en este proyecto,
+    por la garantia estructural de Grid.open_wall que ya explicamos)
+  - si es un laberinto PERFECTO (0 loops) o PLAYABLE (Pac-Man: >=2
+    loops, esquinas+centro alcanzables, pocos dead-ends)
+  - flags utiles: --min-loops N y --max-dead-ends N (usar
+    --max-dead-ends 0 para chequear si calificaria para el bonus de
+    "cero dead-ends").
+Uso: python3 scripts/maze_analyzer.py maze.txt
+
+==================================================================
+5. PATRONES DE DISENO Y DECISIONES DE ARQUITECTURA (para "por que asi?")
+==================================================================
+Si te preguntan por que el codigo esta organizado de cierta forma,
+estas son las respuestas ya armadas:
+
+- "Protocol" en vez de clases abstractas (ABC): GenerationStrategy,
+  MazeMode y Renderer son typing.Protocol, no herencia con
+  abstractmethod. Ventaja: cualquier clase que tenga el metodo correcto
+  "encaja" automaticamente (duck typing verificado por mypy), sin forzar
+  una jerarquia de herencia. Es el equivalente Python a una "interface"
+  de otros lenguajes, pero estructural en vez de nominal.
+
+- Inyeccion de dependencias en MazeGenerator.__init__: permite testear
+  cada pieza (estrategia, solver, modos) de forma aislada, y permite
+  agregar bonus (otro algoritmo de generacion) sin tocar el resto.
+
+- dataclasses frozen (Position, MazeOptions, MazeResult, RenderPalette):
+  inmutabilidad -- una vez creados no cambian, lo que evita bugs de
+  "alguien modifico un objeto compartido sin querer" y hace el codigo
+  mas facil de razonar (mismo espiritu que las tuplas vs listas).
+
+- Separacion "validar" (PerfectMode) vs "validar + modificar"
+  (PlayableMode): aunque comparten la misma interfaz (MazeMode), cada
+  modo hace lo minimo necesario para su caso -- el perfecto YA sale
+  perfecto del backtracker, asi que solo necesita confirmar; el
+  playable necesita transformar activamente el arbol en un grafo con
+  loops.
+
+- "Defense in depth" (validar varias veces seguidas en playable.py):
+  cada paso confia en el anterior pero igual revalida -- prioriza
+  fallar con un mensaje claro por sobre producir silenciosamente un
+  archivo invalido.
+
+- Toda la aleatoriedad pasa por un UNICO objeto Random(seed) que viaja
+  como parametro por TODO el pipeline (nunca se usa random.random() ni
+  se crea un Random() nuevo en otro lado) -- esto es lo que garantiza
+  reproducibilidad total con una seed.
+
+- ui/cli.py con streams inyectables (stdout/stderr/input_stream como
+  parametros): permite tests automatizados del CLI completo sin abrir
+  una terminal real ni mockear sys.stdin/stdout globalmente.
+
+==================================================================
+6. COMO PROBAR EL PROYECTO PASO A PASO
+==================================================================
+Preparacion (una sola vez):
+    cd /home/crblanco/Cursus_42/A_Maze_ing01
+    make install          # instala dependencias con uv (o usa el venv
+                           # que ya armamos en la sesion anterior si uv
+                           # no esta disponible en tu maquina)
+
+Comandos basicos:
+    make run              # genera con config.txt y entra al menu
+    make test              # corre los 304 tests (deberian pasar todos)
+    make lint              # flake8 + mypy (deberian salir limpios)
+    make lint-strict       # version mas estricta de mypy
+    make debug              # corre con pdb (el debugger de Python)
+    make clean              # borra caches (__pycache__, .mypy_cache...)
+
+Experimentos progresivos para aprender de verdad (hazlos en orden):
+
+  1. Corre `make run` con el config.txt por defecto (10x10). Fijate que
+     aparece el warning de "grid is too small for pattern 42" (10 < 11
+     de ancho minimo). Elige "4" para salir sin hacer nada mas todavia.
+
+  2. Copia config.txt a mi_config.txt y cambia WIDTH=25 HEIGHT=15 (o
+     mas grande) para que el patron "42" SI aparezca. Corre:
+        python3 a_maze_ing.py mi_config.txt
+     y observa el "42" dibujado en el centro del ASCII.
+
+  3. En el menu, prueba las 4 opciones una por una:
+       1 -> fijate que el laberinto CAMBIA (aunque el config tenga
+            SEED fija) -- eso confirma que entendiste
+            _regeneration_seed.
+       2 -> el camino con "." aparece y desaparece.
+       3 -> el caracter de pared rota entre #, ▓, █ (no colores).
+       4 -> sale.
+
+  4. Cambia PERFECT=True en mi_config.txt y vuelve a correr. Compara
+     visualmente contra el PERFECT=False: el perfecto deberia verse con
+     MENOS "loops" (caminos alternativos) -- muchos mas pasillos sin
+     salida.
+
+  5. Verifica con la herramienta oficial:
+        python3 scripts/maze_analyzer.py maze.txt
+     Lee el "Verdict" final -- deberia decir "Pac-Man-USABLE" (si
+     PERFECT=False) o "PERFECT maze" (si PERFECT=True). Prueba tambien:
+        python3 scripts/maze_analyzer.py maze.txt --max-dead-ends 0
+     (para ver si tu laberinto calificaria para el bonus de cero
+     dead-ends -- normalmente NO, porque MAX_REAL_DEAD_ENDS=2 tolera
+     hasta 2).
+
+  6. Reproducibilidad: corre el mismo config DOS veces sin tocar nada
+     (sin pasar por el menu, elige "4" enseguida las dos veces) y
+     compara los archivos:
+        diff maze.txt maze_copia.txt   (renombra uno antes de repetir)
+     deberian ser IDENTICOS byte a byte si la SEED es la misma.
+
+  7. Casos limite (para entender el manejo de errores):
+     - Un grid de 2x2 con PERFECT=False -> deberia fallar con un
+       mensaje claro (imposible cumplir "minimo 2 loops" en tan poco
+       espacio).
+     - ENTRY igual a EXIT en el config -> deberia fallar al cargar el
+       config (antes de siquiera intentar generar).
+     - Un archivo de config que no existe -> mensaje de "file not
+       found", no un traceback.
+     - Agregar una clave rara al config, ej. "FOO=bar" -> falla con
+       "Extra inputs are not permitted" (ya lo comprobamos en la
+       sesion anterior).
+
+  8. Prueba de rendimiento (para entender el fix que hicimos): genera
+     un laberinto de 100x100 o mas y cronometralo:
+        time python3 a_maze_ing.py config_grande.txt
+     (con WIDTH=100 HEIGHT=100 en el config). Con el codigo YA
+     arreglado deberia tardar bastante menos de un minuto; antes del
+     fix, ni siquiera terminaba en varios minutos.
+
+  9. Usa mazegen como libreria (sin pasar por config.txt en absoluto),
+     copiando el ejemplo de la seccion 4.12 en un archivo aparte o en
+     el REPL de Python (python3, dentro del entorno virtual). Esto es
+     EXACTAMENTE lo que un evaluador podria pedirte que demuestres en
+     vivo para probar que el modulo es realmente reutilizable.
+
+==================================================================
+7. PREGUNTAS TIPICAS DE EVALUACION + RESPUESTAS MODELO
+==================================================================
+
+P: "Explica el flujo completo desde que corro el programa hasta que
+    se genera el archivo."
+R: Usa el trace de la seccion 3, paso a paso (a_maze_ing.py -> ui/cli
+   -> config_loader -> generator.generate -> encoder -> archivo).
+
+P: "Por que eligieron el algoritmo recursive backtracker?"
+R: Es simple de implementar y entender, garantiza MATEMATICAMENTE (por
+   ser un DFS que nunca revisita celdas) producir un spanning tree --
+   osea un laberinto perfecto -- sin necesitar validacion extra despues.
+   Es ademas la base que despues se puede enriquecer con loops para el
+   modo playable, reusando la misma estructura. (Si preguntan
+   desventajas: tiende a producir pasillos largos con poca ramificacion,
+   un sesgo conocido del algoritmo -- Prim o Kruskal dan mas
+   ramificacion pero son mas complejos de implementar).
+
+P: "Como garantizan que no haya paredes incoherentes entre celdas
+    vecinas?"
+R: Por diseno: Grid.open_wall() SIEMPRE abre la pared en ambos lados a
+   la vez (la celda y su vecino), nunca existe una operacion que abra
+   un solo lado. Es fisicamente imposible generar una incoherencia con
+   esta API -- no depende de validarlo despues, esta garantizado
+   estructuralmente desde el diseno de la clase.
+
+P: "Como calculan si el laberinto tiene loops?"
+R: Formula de teoria de grafos: loops = aristas_abiertas - nodos +
+   componentes_conexas. Con una sola componente, es aristas - nodos + 1.
+   Un arbol (0 loops) tiene exactamente nodos-1 aristas.
+
+P: "Que pasa si el grid es muy chico para el patron 42?"
+R: build_pattern42_positions detecta que width o height es menor a
+   11x7 (el tamano de la mascara) y devuelve un set vacio de celdas
+   reservadas + un mensaje de warning, que generator.py propaga hasta
+   ui/cli.py, que lo imprime en consola -- tal como exige el subject
+   ("Print an error message on the console in that case").
+
+P: "Como se garantiza la reproducibilidad con la seed?"
+R: Un unico objeto random.Random(seed) se crea en generator.generate()
+   y se pasa como parametro a TODA la cadena (estrategia, modos) -- no
+   hay ninguna otra fuente de aleatoriedad en el codigo. Con la misma
+   seed, todas las decisiones "al azar" (por donde cavar, que pared
+   abrir para un loop, que dead-end resolver primero) se repiten
+   identicas.
+
+P: "Cual es la diferencia entre PERFECT=True y PERFECT=False en el
+    codigo, no solo en el resultado?"
+R: Ambos arrancan del MISMO arbol generado por el backtracker.
+   PerfectMode.apply() solo VALIDA que siga siendo un arbol (0 loops,
+   conectado, sin zonas 3x3 abiertas) -- no modifica nada.
+   PlayableMode.apply() en cambio ABRE paredes nuevas activamente para
+   crear al menos 2 loops y reducir los dead-ends a maximo 2, respetando
+   siempre la regla de no crear zonas 3x3 abiertas, y revalida todo al
+   final.
+
+P: "Como calculan el camino mas corto?"
+R: BFS (busqueda en anchura) desde entry, que garantiza el camino mas
+   corto en un grafo sin pesos porque explora por niveles de distancia
+   -- la primera vez que se alcanza el destino, es necesariamente por
+   el camino mas corto posible.
+
+P: "Muestrame que el codigo es reutilizable."
+R: Demo en vivo del ejemplo de la seccion 4.12 -- importar
+   MazeGenerator, MazeOptions, Position desde mazegen (sin tocar
+   config.txt, ui/, ni el archivo de salida) y generar un resultado en
+   memoria.
+
+P: "Que pasaria si quisiera agregar otro algoritmo de generacion?"
+R: Solo hay que escribir una clase nueva con un metodo
+   generate(grid, rng, reserved) -> Grid (cumpliendo el Protocol
+   GenerationStrategy) y pasarla a MazeGenerator(strategy=NuevaClase()).
+   Nada mas del pipeline (modos, solver, encoder) necesita cambiar,
+   porque no conocen ni les importa que estrategia se uso.
+
+==================================================================
+8. GUIA DE MODIFICACION EN VIVO (que tocar segun lo que pidan)
+==================================================================
+El subject advierte explicitamente que en la evaluacion pueden pedir
+una modificacion pequena en vivo. Esta tabla es tu mapa rapido:
+
+--- "Cambien el ancho maximo de los pasillos / la regla del 3x3" ---
+Archivo: mazegen/modes/playable.py
+Funciones: _would_create_playable_open_3x3_area, _is_playable_open_3x3_
+block(_with_candidate), has_playable_open_3x3_area (y su gemelo
+generico has_open_3x3_area en mazegen/validation.py, usado por
+modes/perfect.py). Cambiar el tamano del bloque de "3" a otro numero en
+todos los `range(3)` / `range(grid.width - 2)` relacionados.
+
+--- "Que el laberinto por defecto no tenga NINGUN dead-end (bonus)" ---
+Archivo: mazegen/modes/playable.py, linea ~9: MAX_REAL_DEAD_ENDS = 2
+Cambiar a MAX_REAL_DEAD_ENDS = 0. Ojo: en grids chicos esto puede hacer
+que _reduce_dead_ends no logre bajar a 0 y lance InvalidMazeError -- es
+esperable, el subject dice que 0 dead-ends es "el ideal" no obligatorio.
+
+--- "Cambien el minimo de loops exigido en modo playable" ---
+Archivo: mazegen/modes/playable.py
+El numero "2" esta hardcodeado en DOS lugares que deben coincidir:
+  - PlayableMode.apply(): la llamada a _ensure_minimum_loops(..., 2)
+  - _validate_playable_final_state(): la condicion
+    count_playable_loops(...) < 2
+Cambiar ambos (o mejor, extraer una constante MIN_LOOPS al estilo de
+MAX_REAL_DEAD_ENDS y usarla en los dos lugares).
+
+--- "Agreguen una clave nueva al config (ej. ALGORITHM)" ---
+Archivo: ui/config_loader.py, clase MazeConfig.
+Agregar un nuevo campo: `algorithm: str = Field(default="backtracker",
+alias="ALGORITHM")`. Como extra="forbid" esta activado, SIN este paso
+el config fallaria con "Extra inputs are not permitted" (verificado en
+vivo). Despues, en ui/cli.py, usar ese valor para elegir que
+GenerationStrategy pasarle a MazeGenerator(strategy=...).
+
+--- "Cambien el formato del archivo de salida" ---
+Archivo: mazegen/encoder.py, funcion format_maze_output(). Es el UNICO
+lugar donde se arma el string final linea por linea.
+
+--- "Agreguen una interaccion nueva al menu" ---
+Archivo: ui/cli.py
+  - _menu_text(): agregar la linea nueva del menu (ej. "5. ...").
+  - _run_interactions(): agregar un nuevo `if choice == "5": ...`
+    ANTES del chequeo del mensaje de error generico al final del while.
+
+--- "Que el camino se muestre con otro caracter, o que las paredes
+     usen color ANSI real en vez de solo cambiar el glifo" ---
+Archivo: ui/renderer/base.py (RenderPalette, los caracteres por
+defecto) y ui/renderer/ascii_renderer.py (como se pintan). Para colores
+ANSI reales habria que envolver los caracteres con secuencias de escape
+tipo "\033[31m" + caracter + "\033[0m" en vez de solo rotar el glifo en
+ui/cli.py (_WALL_STYLES).
+
+--- "Cambien el dibujo del patron 42 / usen otro numero" ---
+Archivo: mazegen/pattern42.py, constante _PATTERN_42_MASK (y ajustar
+_PATTERN_WIDTH/_PATTERN_HEIGHT si el tamano del dibujo cambia -- estos
+se calculan solos con len(), no hace falta tocarlos a mano).
+
+--- "Que el generador use una seed distinta cada regeneracion de forma
+     mas simple / cambien la logica de regeneracion" ---
+Archivo: ui/cli.py, funcion _regeneration_seed().
+
+--- "Muestren que el laberinto SIGUE siendo valido despues del cambio" ---
+Corre: python3 scripts/maze_analyzer.py <archivo_de_salida>
+y/o: make test (para confirmar que no rompiste ningun test existente)
+y/o: make lint (flake8 + mypy, para confirmar que el estilo/tipado
+sigue en regla -- el subject exige que TODO pase mypy sin errores).
+
+--- Reglas de oro para CUALQUIER modificacion en vivo ---
+1. Antes de tocar nada: `make test` para tener una foto de que todo
+   pasaba ANTES de tu cambio.
+2. Despues de tu cambio: `make test` de nuevo (mismos 304 tests, o mas
+   si agregaste alguno) + `make lint` (flake8 y mypy limpios).
+3. Si agregas una funcion nueva, ponle SIEMPRE type hints en parametros
+   y retorno (el subject lo exige explicitamente y mypy --strict lo
+   revienta si falta).
+4. Nunca dejes un except Exception silencioso ni un "pass" vacio -- el
+   subject exige mensajes de error claros, no fallos silenciosos.
+5. Si te piden algo en mazegen/, recorda que ESE paquete no puede
+   importar nada de ui/ (la regla de dependencias de la seccion 1) --
+   si tu cambio necesita imprimir algo en pantalla, esa parte va en
+   ui/cli.py, no en mazegen/.
+
+==================================================================
+9. ERRORES / GOTCHAS CONOCIDOS (para no sorprenderte en vivo)
+==================================================================
+- config.txt con una clave desconocida -> falla (extra="forbid" en
+  Pydantic). Verificado en vivo. No es un bug, es una decision de
+  diseno, pero hay que saber explicarla (ver seccion 4.13).
+- ui/cli.py no atrapa KeyboardInterrupt (Ctrl+C) ni excepciones
+  genericas fuera de (ValueError, MazeError, OSError) -- un Ctrl+C
+  durante el menu interactivo puede mostrar un traceback en vez de
+  salir con gracia. Documentado en el informe de evaluacion, hallazgo
+  "c". Si te lo hacen notar en la evaluacion, es un hueco real, no
+  discutas que "no importa".
+- "Rotate wall colours" (opcion 3 del menu) cambia el CARACTER usado
+  para las paredes (#, ▓, █), no un color ANSI real de terminal.
+  Documentado como hallazgo "d" del informe de evaluacion.
+- mazegen/validation.py tiene funciones muy parecidas (duplicadas en
+  espiritu) a las que mazegen/modes/playable.py define para si mismo
+  (count_loops vs count_playable_loops, etc.) -- playable.py NO reusa
+  validation.py. Es una pequena deuda tecnica real, buena respuesta
+  honesta si preguntan "que mejorarian".
+- README.md esta vacio (0 bytes) al momento de este documento -- ver
+  el informe de evaluacion para la lista completa de lo que deberia
+  contener. Si la evaluacion es antes de completarlo, es el primer
+  hueco que un evaluador va a notar con solo abrir el repositorio.
+- No existe todavia el paquete pip instalable (mazegen-*.whl o
+  .tar.gz) en la raiz del repo, ni una seccion [build-system] en
+  pyproject.toml -- ver el informe de evaluacion, hallazgo "b".
+- El bug de rendimiento de mazegen/modes/playable.py (grids grandes en
+  modo PERFECT=False tardaban minutos o no terminaban) fue encontrado y
+  arreglado en la sesion anterior (3 causas, todas en ese archivo). Si
+  te preguntan "encontraron algun bug en el proceso", ESTA es una
+  historia real y completa que podes contar con seguridad: que lo
+  encontraste midiendo tiempos, lo diagnosticaste con cProfile, y lo
+  arreglaste sin cambiar ningun comportamiento (304 tests siguen
+  pasando). Es un muy buen ejemplo de trabajo de ingenieria real para
+  mencionar en la evaluacion.
+
+==================================================================
+10. CHEAT SHEET DE UNA PAGINA (repaso final antes de entrar)
+==================================================================
+- Entry point: a_maze_ing.py (7 lineas) -> ui.cli.main()
+- Pipeline real: config_loader.load_config() -> generator.
+  MazeGenerator().generate(options) -> encoder.format_maze_output()
+- generate() en 8 pasos: seed -> grid vacio -> reservar "42" -> validar
+  entry/exit vs "42" -> backtracker.generate() (arbol) -> modo.apply()
+  (perfect valida / playable modifica) -> solver.solve() (BFS) ->
+  MazeResult.
+- Wall bits: NORTH=1, EAST=2, SOUTH=4, WEST=8 (coincide con el subject).
+- Grid.open_wall() abre AMBOS lados a la vez -> coherencia garantizada
+  por diseno, nunca por validacion posterior.
+- Formula de loops: aristas - nodos + componentes_conexas.
+- Perfect = 0 loops (arbol). Playable = >=2 loops + esquinas/centro
+  abiertos + <=2 dead-ends + sin zonas 3x3 abiertas.
+- BFS para el camino mas corto (solver.py) -- garantiza optimalidad en
+  grafos sin peso.
+- Toda la aleatoriedad viene de UN SOLO Random(seed) pasado por
+  parametro en toda la cadena.
+- Patron "42": mazegen/pattern42.py, mascara fija de 11x7, celdas
+  reservadas nunca se tocan, se omite con warning si el grid es chico.
+- 304 tests, flake8 limpio, mypy --strict limpio (verificado en vivo,
+  multiples veces, en esta sesion y la anterior).
+- Falta (ver el otro informe): README.md vacio, paquete pip no
+  construido, manejo de KeyboardInterrupt, colores ANSI reales.
+- Historia de bug real para contar: 3 causas de rendimiento en
+  mazegen/modes/playable.py, encontradas con mediciones + cProfile,
+  arregladas sin romper tests (informe_evaluacion_proyecto_2026-09-25.
+  txt, seccion 6).
