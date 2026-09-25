@@ -191,17 +191,20 @@ La ruta que sale tiene que estar en `site-packages`. El `-P` es importante: sin 
 
 ### Roles
 
-<!-- TODO: revisar y completar -->
-- **crblanco**: ...
-- **sperez-l**: ...
+- **sperez-l**: se encargó del paquete `mazegen`, es decir, de toda la lógica de generación: el algoritmo, los modos perfecto y con bucles, el patrón "42", el cálculo del camino más corto y la exportación en hexadecimal.
+- **crblanco**: se encargó de la parte `ui`: la lectura del archivo de configuración, el menú interactivo y todo lo visual en la terminal, asegurándose de que el laberinto se viera correctamente y cumpliera con lo que pide el subject.
 
 ### Planificación
 
-<!-- TODO: cómo lo planteamos al principio y cómo cambió -->
+La planificación fue la parte más complicada del proyecto, porque primero teníamos que ponernos de acuerdo en cómo organizarlo. Con GitHub y la ayuda de algunos compañeros de 42 llegamos a una estructura de carpetas clara, que separaba la generación (`mazegen`) de la parte visual (`ui`). Gracias a eso cada uno pudo trabajar en su parte de forma independiente, sin pisarnos el código.
 
 ### Qué funcionó bien y qué mejoraríamos
 
-<!-- TODO -->
+**Qué funcionó bien:**
+- Pedirle a la IA que nos generara tests(unitarios) para cada parte nos permitió ir comprobando el código a medida que lo escribíamos. Así detectábamos los fallos al momento y evitamos arrastrar errores graves mientras avanzábamos en el proyecto.
+
+**Qué mejoraríamos:**
+- Nos habría gustado tener más tiempo para hacer el bonus, por ejemplo añadir otro algoritmo de generación o animar la creación del laberinto paso a paso.
 
 ### Herramientas
 
@@ -223,11 +226,9 @@ La ruta que sale tiene que estar en `site-packages`. El `-P` es importante: sin 
 
 ### Uso de IA
 
-<!-- TODO: revisar que esto refleje cómo la hemos usado de verdad -->
 Hemos usado Claude Code como apoyo en:
 - **Revisión y depuración**: encontrar errores (por ejemplo, un problema de rendimiento en el modo con bucles) y entender mensajes de error.
 - **Tests**: actualizar y ampliar los tests cuando cambiábamos la interfaz.
 - **Interfaz de terminal**: colores aleatorios, animación del camino sin parpadeo y recarga del config desde el menú.
-- **Documentación**: primer borrador de este README.
 
 Todo lo generado lo hemos revisado, probado y adaptado nosotros, y nos aseguramos de entender cada parte antes de añadirla.
