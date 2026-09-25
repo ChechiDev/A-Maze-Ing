@@ -1,5 +1,5 @@
 [project]
-name = "a-maze-ing"
+name = "mazegen"
 version = "0.1.0"
 description = "A reusable Python maze generator with hexadecimal wall encoding and terminal visualization."
 authors = [
@@ -28,3 +28,12 @@ python_version = "3.12"
 strict = true
 warn_unused_configs = true
 warn_unreachable = true
+
+[build-system]
+requires = ["uv_build>=0.9.15,<0.10.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+# Package only the reusable mazegen module, kept at the repository root.
+module-name = "mazegen"
+module-root = ""
