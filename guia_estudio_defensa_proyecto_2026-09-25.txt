@@ -1,6 +1,8 @@
 A-MAZE-ING - GUIA DE ESTUDIO, PRUEBAS Y DEFENSA DEL PROYECTO
-Fecha: 2026-09-25
-Repositorio: /home/crblanco/Cursus_42/A_Maze_ing01
+Fecha: 2026-09-25 (actualizada el mismo dia, sesion 3: toda la parte
+visual nueva -- colores aleatorios, estilos de pared, camino continuo,
+animacion, pantalla sin parpadeo --, paquete pip y README)
+Repositorio: /home/crblanco/Cursus_42/A-Maze-Ing
 Companero de este documento: informe_evaluacion_proyecto_2026-09-25.txt
 (ese archivo dice QUE FALTA; este archivo te ensena COMO FUNCIONA TODO
 para que lo puedas explicar y modificar en vivo durante la evaluacion)
@@ -26,6 +28,10 @@ Orden de lectura recomendado:
      seccion 7 (preguntas tipicas) y la seccion 10 (cheat sheet).
   6. Si en la evaluacion piden modificar algo en vivo: seccion 8 te dice
      exactamente en que archivo y funcion tocar segun el tipo de pedido.
+  7. Si eres crblanco (el responsable de la parte visual / ui): la
+     seccion 11 es TU seccion. Explica TODO lo visual desde el nivel mas
+     bajo (que es un caracter en la terminal, que es un codigo ANSI) hasta
+     el mas alto (el menu), con ejemplos reales sacados del codigo.
 
 ==================================================================
 1. MAPA MENTAL DEL PROYECTO
@@ -44,8 +50,8 @@ codigo asi?"):
 
   ui/        -> la "aplicacion". Lee config.txt, llama a mazegen,
                 escribe el archivo de salida con el formato hexadecimal
-                exigido, dibuja el ASCII en pantalla, y maneja el menu
-                interactivo. Si mazegen es la libreria, ui/cli.py es "el
+                exigido, dibuja el laberinto en pantalla (con lineas,
+                colores y animacion), y maneja el menu interactivo. Si mazegen es la libreria, ui/cli.py es "el
                 programa que la usa" (como cualquier proyecto futuro que
                 importe mazegen tendria que hacer).
 
@@ -64,6 +70,24 @@ Diagrama de dependencias (quien importa a quien):
     ui/config_loader.py  -> mazegen/grid.py (solo usa la clase Position)
     ui/renderer/*         -> mazegen/generator.py (usa MazeResult)
                            -> mazegen/grid.py (usa ALL_WALLS, Position, Wall)
+    ui/frame.py           -> (nada: solo arma texto)
+    ui/terminal_screen.py -> (nada: solo escribe codigos ANSI)
+
+Los archivos de ui/ y para que sirve cada uno (detalle en seccion 11):
+
+    ui/cli.py                  el programa: main(), el menu, la animacion
+    ui/config_loader.py        lee y valida config.txt (Pydantic)
+    ui/frame.py                arma el "marco": laberinto + Path + menu
+                               + Status
+    ui/terminal_screen.py      escribe en la terminal sin parpadeo
+    ui/renderer/base.py        las PALETAS de simbolos (que caracter es
+                               cada cosa)
+    ui/renderer/theme.py       los 4 ESTILOS de pared, los COLORES y el
+                               sorteo aleatorio de estilo+colores
+    ui/renderer/line_renderer.py  el DIBUJO: convierte el laberinto en
+                               lineas, esquinas y camino, con color
+    ui/renderer/ascii_renderer.py renderer antiguo (bloques); ya NO lo usa
+                               el menu, se conserva como alternativa
 
 Dentro de mazegen/, el orden real de dependencias (de mas basico a mas
 alto nivel) es:
@@ -201,9 +225,10 @@ PASO 2 - ui/cli.py: main()
   - config = load_config("config.txt")  (ver PASO 3)
   - result = _generate(config, regeneration_count=0)  (ver PASO 4)
   - Escribe el archivo de salida con format_maze_output(...)
-  - Imprime el ASCII en pantalla con show_path=True
   - Si hubo warning (ej. grid muy chico para el "42"), lo imprime
-  - Si es interactivo, entra al menu (_run_interactions)
+  - Si es interactivo: sortea un estilo y colores al azar
+    (random_maze_style), dibuja el laberinto animando el camino y entra
+    al menu (_run_interactions). Detalle completo en la seccion 11.
 
 PASO 3 - ui/config_loader.py: load_config()
   - Lee el archivo linea por linea, ignora vacias y las que empiezan
@@ -212,7 +237,8 @@ PASO 3 - ui/config_loader.py: load_config()
     "0,0" -> Position(x=0, y=0), "True"/"False" -> bool, valida que
     ENTRY/EXIT esten dentro del grid y sean distintas.
   - Devuelve un objeto MazeConfig con: width=4, height=4, entry=(0,0),
-    exit=(3,3), output_file="maze.txt", perfect=True, seed=1.
+    exit=(3,3), output_file="maze.txt", perfect=True, seed=1,
+    path_delay=0.05 (valor por defecto, porque no esta en el config).
 
 PASO 4 - ui/cli.py: _generate() -> mazegen/generator.py: generate()
   Esta es LA funcion central. Con nuestro ejemplo (4x4, PERFECT=True,
@@ -261,8 +287,14 @@ PASO 5 - mazegen/encoder.py: format_maze_output()
         3,3
         EESSEE
 
-PASO 6 - ui/cli.py imprime el ASCII (ver seccion 4.14) y entra al menu:
-        === A-Maze-ing ===
+PASO 6 - ui/cli.py dibuja el laberinto (ver seccion 11) y el menu:
+        ┏━━━━━━━┳━┓
+        ┃E────╮ ┃ ┃
+        ...            (con colores al azar y el camino animado)
+
+        Path: shown
+
+        Actions:
         1. Re-generate a new maze
         2. Show / Hide the shortest path
         3. Rotate wall colours
@@ -693,7 +725,8 @@ vivo, este es el ejemplo minimo (podrias necesitar escribirlo a mano):
 ------------------------------------------------------------------
 MazeConfig es un modelo Pydantic (BaseModel). Detalles importantes:
 - ConfigDict(extra="forbid"): CUALQUIER clave en el archivo que no sea
-  WIDTH/HEIGHT/ENTRY/EXIT/OUTPUT_FILE/PERFECT/SEED hace fallar la carga
+  WIDTH/HEIGHT/ENTRY/EXIT/OUTPUT_FILE/PERFECT/SEED/PATH_DELAY hace
+  fallar la carga
   con "Extra inputs are not permitted" (LO VERIFICAMOS EN VIVO: probamos
   agregar ALGORITHM=prim y efectivamente falla). Es una decision de
   diseno defendible ("asi detectamos typos en el config en vez de
@@ -720,71 +753,87 @@ MazeConfig es un modelo Pydantic (BaseModel). Detalles importantes:
 - parse_config_lines(): el parser de texto plano en si (separado de
   Pydantic) -- ignora lineas vacias y comentarios (#), separa en KEY=
   VALUE por el primer "=", detecta claves duplicadas.
+- path_delay (clave PATH_DELAY, opcional, NUEVA): segundos que se espera
+  entre celda y celda al animar el camino. Constantes arriba del
+  archivo: DEFAULT_PATH_DELAY = 0.05 y MAX_PATH_DELAY = 1.0. Field(ge=0,
+  le=MAX_PATH_DELAY) hace que Pydantic rechace valores negativos,
+  mayores que 1 o que no sean numeros. 0 desactiva la animacion. Es el
+  ejemplo perfecto de "como se agrega una clave nueva al config": un
+  Field con alias + un valor por defecto.
 
 ------------------------------------------------------------------
-4.14 ui/renderer/base.py + ascii_renderer.py -- EL DIBUJO EN PANTALLA
+4.14 ui/renderer/ -- EL DIBUJO EN PANTALLA (resumen; detalle en 11)
 ------------------------------------------------------------------
-base.py: RenderPalette (dataclass) define los caracteres usados:
-  wall="#", path=".", entry="E", exit="S", pattern="4", empty=" ".
-  Renderer es otro Protocol (mismo patron que MazeMode/
-  GenerationStrategy): cualquier clase con render(result, show_path)
-  "es" un Renderer -- asi seria facil, en teoria, agregar despues un
-  renderer distinto (ej. uno con colores ANSI reales, o un renderer MLX)
-  sin tocar ui/cli.py mas que la linea donde se instancia.
+Hay 4 archivos, cada uno con UNA responsabilidad:
 
-ascii_renderer.py: AsciiRenderer.render() -- como se "dibuja" el grid:
-  - El canvas de texto es MAS GRANDE que el grid logico: cada celda
-    ocupa una posicion "central" en una grilla de
-    (2*width+1) x (2*height+1) caracteres, y entre cada par de celdas
-    hay una posicion "de pared" que se pinta vacio si esa pared esta
-    abierta. Esto es lo que permite dibujar las paredes COMO paredes
-    (lineas entre celdas) en vez de solo simbolos dentro de cada celda.
-    _canvas_coordinates(position) -> (y*2+1, x*2+1) es la formula que
-    convierte una Position logica en su posicion central en el canvas.
-  - _build_canvas(): arranca el canvas TODO lleno del caracter de pared,
-    despues por cada celda marca su centro como "vacio" (o "4" si es una
-    celda completamente cerrada del patron 42 -- cell.walls==ALL_WALLS),
-    y por cada pared ABIERTA de esa celda, vacia tambien la posicion
-    intermedia hacia ese vecino.
-  - _draw_path(): si show_path=True, recorre result.shortest_path letra
-    por letra (cada letra es un Wall via _PATH_STEPS), va moviendose con
-    position.move(wall), y marca cada posicion intermedia con el
-    caracter "." (salvo entry/exit, que se dejan para sus propios
-    simbolos).
-  - _mark_position(): pinta entry con "E" y exit con "S" AL FINAL,
-    encima de cualquier otra cosa (para que nunca se tapen con el
-    camino).
+  base.py          QUE caracter es cada cosa. Dos dataclasses frozen:
+                   - LineRenderPalette: la que usa el menu. Paredes con
+                     lineas (━ ┃ ┏ ┓ ┗ ┛ ┳ ┻ ┣ ┫ ╋), camino con linea fina
+                     y esquinas redondeadas (─ │ ╭ ╮ ╰ ╯), E, S, █ (42).
+                   - RenderPalette: la del renderer antiguo de bloques.
+                   Y el Protocol Renderer: cualquier clase con
+                   render(result, show_path) -> str "es" un Renderer.
+
+  theme.py         los COLORES y el AZAR. ColourTheme (un codigo de color
+                   por elemento), LINE_STYLES (4 estilos de pared),
+                   MazeStyle (estilo + colores juntos), colourize() (pone
+                   el codigo ANSI) y random_maze_style() (sortea un
+                   estilo y 5 colores distintos, nunca igual al actual).
+
+  line_renderer.py el DIBUJO. LineRenderer.render(result, show_path)
+                   convierte la cuadricula en texto: canvas de
+                   (2*alto+1) x (2*ancho+1), paredes, esquinas calculadas
+                   mirando a los vecinos, camino como linea continua y
+                   color por elemento.
+
+  ascii_renderer.py el renderer ORIGINAL (paredes con bloques). Ya no lo
+                   usa el menu; se conserva porque sigue cumpliendo el
+                   Protocol Renderer y tiene sus tests.
+
+Todo esto se explica paso a paso, con ejemplos reales, en la seccion 11.
 
 ------------------------------------------------------------------
 4.15 ui/cli.py -- EL FLUJO COMPLETO DE LA APLICACION Y EL MENU
 ------------------------------------------------------------------
-main(argv, stdout, stderr, input_stream, interactive): notar que TODOS
-los canales de entrada/salida son parametros opcionales (con default a
-sys.stdout/sys.stderr/input real) -- esto es lo que permite testear el
-CLI completo sin tocar la consola real (los tests le pasan streams
-falsos de tipo StringIO). Es otro punto bueno de diseno para mencionar.
+main(argv, stdout, stderr, input_stream, interactive, style_rng, animate,
+sleep, input_ready): TODOS los canales de entrada/salida y todas las
+fuentes de "cosas externas" (azar, tiempo, teclado) son parametros
+opcionales con un default real. Los tests pasan versiones falsas:
+  - stdout/stderr/input_stream -> StringIO (no hace falta terminal)
+  - style_rng -> Random(semilla) (colores reproducibles en los tests)
+  - sleep -> una funcion que solo apunta los tiempos (tests instantaneos)
+  - input_ready -> una funcion que simula "el usuario no escribio nada"
+Es un punto MUY bueno de diseno para mencionar ("inyeccion de
+dependencias": todo lo que no es determinista entra por parametro).
 
-Flujo (ya visto en la seccion 3): valida argc==1, carga config, genera,
-escribe archivo, imprime ASCII, imprime warning si existe, entra al
-menu si interactive=True.
+Flujo de main():
+  1. Valida argc == 1, carga config, genera, escribe el archivo de salida
+     e imprime el warning si lo hay.
+  2. Si interactive=False: escribe el laberinto SIN colores y termina.
+  3. Si interactive=True: abre TerminalScreen (oculta el cursor), crea un
+     _Display, sortea el estilo inicial con random_maze_style(rng,
+     DEFAULT_STYLE), dibuja (animando el camino) y entra al menu.
 
-_run_interactions(): el loop del menu. show_path y wall_style_index son
-variables de ESTADO que persisten entre iteraciones del menu (no se
-resetean cada vez que se imprime):
-  - opcion "1" (regenerar): regeneration_count += 1, y llama a
-    _generate() de nuevo con una seed DISTINTA (ver
-    _regeneration_seed) -- por eso cada regeneracion da un laberinto
-    distinto aunque el config tenga una SEED fija. Tambien re-escribe el
-    archivo de salida en disco (no solo la pantalla).
-  - opcion "2" (mostrar/ocultar camino): toggle simple de show_path.
-  - opcion "3" (rotar colores): wall_style_index avanza ciclicamente
-    entre 3 estilos ("#", "▓", "█") -- ESTO ES SOLO CAMBIO DE CARACTER,
-    NO codigo de color ANSI real (ver el informe de evaluacion, hallazgo
-    "d" -- es una decision que hay que saber defender o mejorar si
-    preguntan).
-  - opcion "4": sale.
-  - cualquier otra cosa: mensaje de error a stderr, vuelve a mostrar el
-    menu (no se cae ni se traba).
+Piezas internas nuevas (detalle en la seccion 11):
+  - _View (dataclass frozen): TODO lo que se ve en pantalla en un
+    momento: result, show_path, style, status, status_is_error. Cada
+    opcion del menu crea una _View nueva con dataclasses.replace().
+  - _Display: sabe DIBUJAR una _View. show(view, path_delay) anima el
+    camino si toca y despues dibuja el marco completo.
+  - ERROR_STATUS_SECONDS = 4.0: los mensajes de error se borran solos a
+    los 4 segundos.
+
+_run_interactions(): el loop del menu.
+  - opcion "1": VUELVE A LEER config.txt (load_config). Si el config
+    cambio, genera con la seed del config (regeneration_count = 0); si
+    no cambio, suma 1 a regeneration_count (laberinto distinto). Si el
+    config es invalido, NO se cae: muestra el error en la linea Status y
+    conserva el laberinto anterior. Reescribe el archivo de salida.
+  - opcion "2": invierte show_path. Si lo muestra, lo anima.
+  - opcion "3": sortea estilo + colores nuevos (random_maze_style). No
+    cambia el laberinto ni el archivo de salida, solo el aspecto.
+  - opcion "4": muestra "Goodbye." y sale.
+  - cualquier otra cosa: "invalid choice" en Status (se borra a los 4 s).
 
 _regeneration_seed(seed, regeneration_count): logica de la seed en cada
 regeneracion --
@@ -847,7 +896,8 @@ estas son las respuestas ya armadas:
   cada pieza (estrategia, solver, modos) de forma aislada, y permite
   agregar bonus (otro algoritmo de generacion) sin tocar el resto.
 
-- dataclasses frozen (Position, MazeOptions, MazeResult, RenderPalette):
+- dataclasses frozen (Position, MazeOptions, MazeResult, las paletas,
+  ColourTheme, MazeStyle, _View):
   inmutabilidad -- una vez creados no cambian, lo que evita bugs de
   "alguien modifico un objeto compartido sin querer" y hace el codigo
   mas facil de razonar (mismo espiritu que las tuplas vs listas).
@@ -864,50 +914,68 @@ estas son las respuestas ya armadas:
   fallar con un mensaje claro por sobre producir silenciosamente un
   archivo invalido.
 
-- Toda la aleatoriedad pasa por un UNICO objeto Random(seed) que viaja
-  como parametro por TODO el pipeline (nunca se usa random.random() ni
-  se crea un Random() nuevo en otro lado) -- esto es lo que garantiza
-  reproducibilidad total con una seed.
+- Toda la aleatoriedad DEL LABERINTO pasa por un UNICO objeto
+  Random(seed) que viaja como parametro por TODO el pipeline de mazegen
+  (nunca se usa random.random() ni se crea un Random() nuevo en otro
+  lado) -- esto es lo que garantiza reproducibilidad total con una seed.
+  Los COLORES usan un Random() distinto y separado, creado en ui/cli.py
+  (style_rng). Es a proposito: cambiar los colores (opcion 3) jamas
+  altera el laberinto, y la SEED del config sigue dando el mismo
+  laberinto aunque los colores salgan distintos en cada ejecucion.
 
 - ui/cli.py con streams inyectables (stdout/stderr/input_stream como
   parametros): permite tests automatizados del CLI completo sin abrir
-  una terminal real ni mockear sys.stdin/stdout globalmente.
+  una terminal real ni mockear sys.stdin/stdout globalmente. Lo mismo
+  con style_rng, sleep e input_ready (azar, tiempo y teclado).
+
+- Estado inmutable en el menu (_View + dataclasses.replace): en vez de
+  tener 4 variables sueltas que se modifican (show_path, style...), cada
+  accion crea una _View nueva. Lo que se dibuja SIEMPRE es una _View
+  completa y coherente.
 
 ==================================================================
 6. COMO PROBAR EL PROYECTO PASO A PASO
 ==================================================================
 Preparacion (una sola vez):
-    cd /home/crblanco/Cursus_42/A_Maze_ing01
-    make install          # instala dependencias con uv (o usa el venv
-                           # que ya armamos en la sesion anterior si uv
-                           # no esta disponible en tu maquina)
+    cd /home/crblanco/Cursus_42/A-Maze-Ing
+    make install          # instala dependencias con uv
 
 Comandos basicos:
     make run              # genera con config.txt y entra al menu
-    make test              # corre los 304 tests (deberian pasar todos)
+    make test              # corre los 406 tests (deberian pasar todos)
     make lint              # flake8 + mypy (deberian salir limpios)
     make lint-strict       # version mas estricta de mypy
     make debug              # corre con pdb (el debugger de Python)
     make clean              # borra caches (__pycache__, .mypy_cache...)
+    make package            # regenera mazegen-0.1.0-py3-none-any.whl
 
 Experimentos progresivos para aprender de verdad (hazlos en orden):
 
-  1. Corre `make run` con el config.txt por defecto (10x10). Fijate que
-     aparece el warning de "grid is too small for pattern 42" (10 < 11
-     de ancho minimo). Elige "4" para salir sin hacer nada mas todavia.
+  1. Copia config.txt a mi_config.txt y pon WIDTH=10 HEIGHT=10. Corre
+        python3 a_maze_ing.py mi_config.txt
+     Fijate que aparece el warning de "grid is too small for pattern 42"
+     (10 < 11 de ancho minimo). Elige "4" para salir.
 
-  2. Copia config.txt a mi_config.txt y cambia WIDTH=25 HEIGHT=15 (o
-     mas grande) para que el patron "42" SI aparezca. Corre:
+  2. En mi_config.txt cambia a WIDTH=25 HEIGHT=15 (o mas grande) para
+     que el patron "42" SI aparezca. Corre:
         python3 a_maze_ing.py mi_config.txt
      y observa el "42" dibujado en el centro del ASCII.
 
   3. En el menu, prueba las 4 opciones una por una:
        1 -> fijate que el laberinto CAMBIA (aunque el config tenga
             SEED fija) -- eso confirma que entendiste
-            _regeneration_seed.
-       2 -> el camino con "." aparece y desaparece.
-       3 -> el caracter de pared rota entre #, ▓, █ (no colores).
+            _regeneration_seed. Ahora edita mi_config.txt SIN cerrar el
+            programa (cambia EXIT, por ejemplo), guarda y pulsa 1: el
+            laberinto usa el config nuevo. Pon un EXIT fuera del
+            laberinto y pulsa 1: sale el error en Status, se conserva el
+            laberinto y a los 4 segundos el error desaparece.
+       2 -> el camino (linea continua) desaparece; pulsa 2 otra vez y
+            se vuelve a dibujar animado, celda a celda.
+       3 -> cambian los colores y (a veces) el estilo de las paredes.
+            Pulsalo varias veces: nunca sale dos veces seguidas lo mismo.
        4 -> sale.
+     Prueba tambien PATH_DELAY=0.2 (animacion lenta) y PATH_DELAY=0
+     (sin animacion) en mi_config.txt.
 
   4. Cambia PERFECT=True en mi_config.txt y vuelve a correr. Compara
      visualmente contra el PERFECT=False: el perfecto deberia verse con
@@ -996,10 +1064,11 @@ R: build_pattern42_positions detecta que width o height es menor a
 P: "Como se garantiza la reproducibilidad con la seed?"
 R: Un unico objeto random.Random(seed) se crea en generator.generate()
    y se pasa como parametro a TODA la cadena (estrategia, modos) -- no
-   hay ninguna otra fuente de aleatoriedad en el codigo. Con la misma
+   hay ninguna otra fuente de aleatoriedad en el laberinto. Con la misma
    seed, todas las decisiones "al azar" (por donde cavar, que pared
    abrir para un loop, que dead-end resolver primero) se repiten
-   identicas.
+   identicas. Los colores usan OTRO Random, separado a proposito, para
+   que la parte visual no afecte al laberinto (seccion 11.6).
 
 P: "Cual es la diferencia entre PERFECT=True y PERFECT=False en el
     codigo, no solo en el resultado?"
@@ -1022,6 +1091,9 @@ R: Demo en vivo del ejemplo de la seccion 4.12 -- importar
    MazeGenerator, MazeOptions, Position desde mazegen (sin tocar
    config.txt, ui/, ni el archivo de salida) y generar un resultado en
    memoria.
+
+P: (Preguntas de la parte visual: colores, estilos, animacion,
+    parpadeo... -> seccion 11.15.)
 
 P: "Que pasaria si quisiera agregar otro algoritmo de generacion?"
 R: Solo hay que escribir una clase nueva con un metodo
@@ -1072,18 +1144,18 @@ Archivo: mazegen/encoder.py, funcion format_maze_output(). Es el UNICO
 lugar donde se arma el string final linea por linea.
 
 --- "Agreguen una interaccion nueva al menu" ---
-Archivo: ui/cli.py
-  - _menu_text(): agregar la linea nueva del menu (ej. "5. ...").
-  - _run_interactions(): agregar un nuevo `if choice == "5": ...`
-    ANTES del chequeo del mensaje de error generico al final del while.
+  - ui/frame.py, _actions_text(): agregar la linea "5. ..." antes de
+    "Choice?".
+  - ui/cli.py, _run_interactions(): agregar un nuevo
+    `if choice == "5": ...` ANTES del mensaje de "invalid choice" del
+    final del while. Crear la _View nueva con replace(...) y llamar a
+    display.show(view).
+  - Actualizar el mensaje "invalid choice: use 1, 2, 3, or 4" y los
+    tests que comprueban el texto del menu (tests/test_frame.py).
 
---- "Que el camino se muestre con otro caracter, o que las paredes
-     usen color ANSI real en vez de solo cambiar el glifo" ---
-Archivo: ui/renderer/base.py (RenderPalette, los caracteres por
-defecto) y ui/renderer/ascii_renderer.py (como se pintan). Para colores
-ANSI reales habria que envolver los caracteres con secuencias de escape
-tipo "\033[31m" + caracter + "\033[0m" en vez de solo rotar el glifo en
-ui/cli.py (_WALL_STYLES).
+--- Cualquier cambio VISUAL (colores, estilos, simbolos, animacion) ---
+Ver la seccion 11.16: tiene la lista completa de modificaciones
+visuales en vivo con el archivo y la linea exacta a tocar.
 
 --- "Cambien el dibujo del patron 42 / usen otro numero" ---
 Archivo: mazegen/pattern42.py, constante _PATTERN_42_MASK (y ajustar
@@ -1103,7 +1175,7 @@ sigue en regla -- el subject exige que TODO pase mypy sin errores).
 --- Reglas de oro para CUALQUIER modificacion en vivo ---
 1. Antes de tocar nada: `make test` para tener una foto de que todo
    pasaba ANTES de tu cambio.
-2. Despues de tu cambio: `make test` de nuevo (mismos 304 tests, o mas
+2. Despues de tu cambio: `make test` de nuevo (mismos 406 tests, o mas
    si agregaste alguno) + `make lint` (flake8 y mypy limpios).
 3. Si agregas una funcion nueva, ponle SIEMPRE type hints en parametros
    y retorno (el subject lo exige explicitamente y mypy --strict lo
@@ -1127,29 +1199,45 @@ sigue en regla -- el subject exige que TODO pase mypy sin errores).
   salir con gracia. Documentado en el informe de evaluacion, hallazgo
   "c". Si te lo hacen notar en la evaluacion, es un hueco real, no
   discutas que "no importa".
-- "Rotate wall colours" (opcion 3 del menu) cambia el CARACTER usado
-  para las paredes (#, ▓, █), no un color ANSI real de terminal.
-  Documentado como hallazgo "d" del informe de evaluacion.
+- "Rotate wall colours" (opcion 3): YA NO es un simple cambio de
+  caracter. Ahora sortea colores ANSI reales (256 colores) y uno de 4
+  estilos de pared. El hallazgo "d" del informe esta RESUELTO.
+- El camino usa linea FINA (─ │ ╭ ╮ ╰ ╯), igual que 2 de los 4 estilos
+  de pared (fino y redondeado). En pantalla no importa porque el camino
+  siempre tiene un color distinto al de las paredes. Pero si se ve SIN
+  colores (salida no interactiva, redirigida a un archivo), camino y
+  paredes finas se confunden. Si lo preguntan: es una decision
+  consciente, el color es lo que los distingue.
+- Si el laberinto no cabe en la ventana de la terminal (ej. 125 de
+  ancho = 251 columnas), las lineas se parten y la animacion se
+  descuadra, porque draw_at() escribe en coordenadas absolutas. Solucion
+  en la evaluacion: agrandar la ventana o reducir el zoom (Ctrl + -).
+- Si tecleas MIENTRAS se anima el camino, lo que escribes se ve encima
+  del laberinto hasta que termina la animacion (despues se limpia solo,
+  porque el ultimo render_frame redibuja todo y CLEAR_BELOW borra lo
+  sobrante).
 - mazegen/validation.py tiene funciones muy parecidas (duplicadas en
   espiritu) a las que mazegen/modes/playable.py define para si mismo
   (count_loops vs count_playable_loops, etc.) -- playable.py NO reusa
   validation.py. Es una pequena deuda tecnica real, buena respuesta
   honesta si preguntan "que mejorarian".
-- README.md esta vacio (0 bytes) al momento de este documento -- ver
-  el informe de evaluacion para la lista completa de lo que deberia
-  contener. Si la evaluacion es antes de completarlo, es el primer
-  hueco que un evaluador va a notar con solo abrir el repositorio.
-- No existe todavia el paquete pip instalable (mazegen-*.whl o
-  .tar.gz) en la raiz del repo, ni una seccion [build-system] en
-  pyproject.toml -- ver el informe de evaluacion, hallazgo "b".
+- README.md: YA ESTA completo (con Roles, Planificacion, algoritmo,
+  config, paquete...). Solo revisar que el texto de "Uso de IA" refleje
+  lo que hicieron de verdad.
+- Paquete pip: YA EXISTE mazegen-0.1.0-py3-none-any.whl en la raiz
+  (make package lo regenera). Hallazgo "b" del informe RESUELTO. Hay
+  que regenerarlo si cambia mazegen/ o el README (el README va dentro).
+- config.txt: un test comprueba que tenga el comentario
+  "# Optional keys: SEED, PATH_DELAY." -- si lo editas para probar, NO
+  borres los comentarios o el CI falla (ya nos paso).
 - El bug de rendimiento de mazegen/modes/playable.py (grids grandes en
   modo PERFECT=False tardaban minutos o no terminaban) fue encontrado y
   arreglado en la sesion anterior (3 causas, todas en ese archivo). Si
   te preguntan "encontraron algun bug en el proceso", ESTA es una
   historia real y completa que podes contar con seguridad: que lo
   encontraste midiendo tiempos, lo diagnosticaste con cProfile, y lo
-  arreglaste sin cambiar ningun comportamiento (304 tests siguen
-  pasando). Es un muy buen ejemplo de trabajo de ingenieria real para
+  arreglaste sin cambiar ningun comportamiento (todos los tests
+  siguieron pasando). Es un muy buen ejemplo de trabajo de ingenieria real para
   mencionar en la evaluacion.
 
 ==================================================================
@@ -1170,15 +1258,798 @@ sigue en regla -- el subject exige que TODO pase mypy sin errores).
   abiertos + <=2 dead-ends + sin zonas 3x3 abiertas.
 - BFS para el camino mas corto (solver.py) -- garantiza optimalidad en
   grafos sin peso.
-- Toda la aleatoriedad viene de UN SOLO Random(seed) pasado por
-  parametro en toda la cadena.
+- Toda la aleatoriedad del LABERINTO viene de UN SOLO Random(seed)
+  pasado por parametro en toda la cadena. Los COLORES usan otro Random
+  separado (en ui/cli.py), asi nunca alteran el laberinto.
 - Patron "42": mazegen/pattern42.py, mascara fija de 11x7, celdas
   reservadas nunca se tocan, se omite con warning si el grid es chico.
-- 304 tests, flake8 limpio, mypy --strict limpio (verificado en vivo,
-  multiples veces, en esta sesion y la anterior).
-- Falta (ver el otro informe): README.md vacio, paquete pip no
-  construido, manejo de KeyboardInterrupt, colores ANSI reales.
+- 406 tests, flake8 limpio, mypy --strict limpio.
+- Parte visual en una frase: base.py dice QUE simbolo es cada cosa,
+  theme.py dice DE QUE COLOR y sortea estilos, line_renderer.py DIBUJA
+  (esquinas mirando a los vecinos, camino continuo), terminal_screen.py
+  lo ESCRIBE sin parpadeo, cli.py ANIMA el camino y maneja el menu.
+- Colores: ANSI 256 "\x1b[38;5;Nm" + texto + "\x1b[0m". 14 colores
+  posibles, rng.sample(..., 5) = 5 distintos (paredes, camino, 42, E, S).
+- Sin parpadeo: nunca se borra la pantalla despues del primer frame
+  (solo se sobrescribe), modo sincronizado ?2026, y la animacion solo
+  escribe la celda nueva (draw_at).
+- Resuelto hoy: README completo, paquete .whl, colores ANSI reales.
+  Pendiente: manejo de KeyboardInterrupt (Ctrl+C).
 - Historia de bug real para contar: 3 causas de rendimiento en
   mazegen/modes/playable.py, encontradas con mediciones + cProfile,
   arregladas sin romper tests (informe_evaluacion_proyecto_2026-09-25.
   txt, seccion 6).
+
+==================================================================
+11. LA PARTE VISUAL A FONDO, DESDE ABAJO (seccion de crblanco)
+==================================================================
+Esta seccion explica TODO lo que se ve en pantalla, empezando por lo
+mas basico (que es un caracter, que es un codigo de color) y subiendo
+nivel a nivel hasta el menu. Cada nivel usa solo cosas de los niveles
+anteriores, asi que leela EN ORDEN.
+
+Todos los ejemplos de esta seccion son SALIDAS REALES del codigo
+actual (generadas y copiadas, no inventadas).
+
+------------------------------------------------------------------
+11.0 MAPA: QUE ARCHIVO HACE QUE Y QUIEN LLAMA A QUIEN
+------------------------------------------------------------------
+
+  ui/cli.py  (el director de orquesta)
+     |
+     |-- random_maze_style()        <- ui/renderer/theme.py
+     |      "sortea estilo de pared + 5 colores"
+     |
+     |-- _compose_view(view)
+     |      |-- LineRenderer(palette, colours).render()
+     |      |      <- ui/renderer/line_renderer.py  "dibuja el laberinto"
+     |      |         usa LineRenderPalette  <- ui/renderer/base.py
+     |      |         usa colourize()        <- ui/renderer/theme.py
+     |      |
+     |      |-- TerminalFrameComposer().compose()
+     |             <- ui/frame.py  "pega laberinto + Path + menu + Status"
+     |
+     |-- _Display.show() -> TerminalScreen.render_frame() / draw_at()
+            <- ui/terminal_screen.py  "lo escribe en la terminal
+                                        sin parpadeo"
+
+Regla de oro para explicarlo en una frase:
+  base.py dice QUE SIMBOLO es cada cosa, theme.py dice DE QUE COLOR (y
+  sortea), line_renderer.py DIBUJA, frame.py MONTA la pantalla,
+  terminal_screen.py la ESCRIBE, cli.py DECIDE cuando y ANIMA.
+
+------------------------------------------------------------------
+11.1 NIVEL 0: QUE ES UN "CARACTER" EN LA TERMINAL
+------------------------------------------------------------------
+La terminal es una cuadricula de celdas de texto (filas x columnas).
+Cada celda muestra UN caracter. Todo el laberinto se dibuja con
+caracteres normales de Unicode, no con graficos.
+
+Las paredes usan el bloque Unicode "Box Drawing" (U+2500 a U+257F),
+caracteres pensados justo para dibujar cajas y tablas:
+
+  grueso:     ━ ┃ ┏ ┓ ┗ ┛ ┳ ┻ ┣ ┫ ╋
+  fino:       ─ │ ┌ ┐ └ ┘ ┬ ┴ ├ ┤ ┼
+  redondeado: ─ │ ╭ ╮ ╰ ╯ (esquinas curvas, cruces finos)
+  doble:      ═ ║ ╔ ╗ ╚ ╝ ╦ ╩ ╠ ╣ ╬
+
+Y el bloque lleno █ (U+2588, "Block Elements") para las celdas del 42.
+
+REGLA CLAVE: cada simbolo tiene que ocupar EXACTAMENTE 1 columna. El
+laberinto es una cuadricula perfecta y la animacion escribe en
+posiciones exactas; un simbolo de 2 columnas (como los emojis 🟢 ⭐)
+descuadraria todo lo que viene a su derecha. Por eso no usamos emojis.
+
+------------------------------------------------------------------
+11.2 NIVEL 1: LOS CODIGOS DE ESCAPE ANSI (como se "habla" con la
+     terminal)
+------------------------------------------------------------------
+Para dar ordenes a la terminal (pon color, mueve el cursor, borra) se
+escriben secuencias especiales de texto que la terminal NO muestra,
+sino que obedece. Todas empiezan por el caracter ESC:
+
+  ESC = caracter numero 27 = en Python "\x1b" (hex 1b = 27)
+  "\x1b[" se llama CSI (Control Sequence Introducer): "ahi va una orden"
+
+Todas las secuencias que usa el proyecto:
+
+  Secuencia          Donde (constante)            Que hace
+  -----------------  ---------------------------  -----------------------
+  \x1b[38;5;Nm       theme.colourize()            texto con el color N
+                                                  (N de 0 a 255)
+  \x1b[0m            theme.RESET                  quita el color (vuelve
+                                                  al normal)
+  \x1b[2J            terminal_screen.CLEAR_SCREEN borra TODA la pantalla
+  \x1b[H             terminal_screen.MOVE_HOME    cursor a fila 1, col 1
+  \x1b[F;CH          TerminalScreen.draw_at()     cursor a fila F, col C
+                                                  (empiezan en 1, no en 0)
+  \x1b[J             terminal_screen.CLEAR_BELOW  borra desde el cursor
+                                                  hasta el final
+  \x1b[?25l          terminal_screen.HIDE_CURSOR  oculta el cursor
+  \x1b[?25h          terminal_screen.SHOW_CURSOR  lo vuelve a mostrar
+  \x1b[?2026h        terminal_screen.BEGIN_SYNC   "empiezo un frame, no
+                                                  pintes todavia"
+  \x1b[?2026l        terminal_screen.END_SYNC     "frame terminado, pinta
+                                                  todo de golpe"
+
+Como leer \x1b[38;5;196m:
+  \x1b[   -> empieza una orden
+  38      -> "cambiar el color del TEXTO" (48 seria el del fondo)
+  5       -> "voy a darte un color de la paleta de 256"
+  196     -> el color numero 196 (rojo)
+  m       -> fin de la orden (la "m" es la de los colores/estilos)
+
+Ejemplo completo: "\x1b[38;5;196m" + "━━━" + "\x1b[0m" = "━━━" en rojo.
+El \x1b[0m del final es IMPRESCINDIBLE: sin el, TODO lo que venga
+despues seguiria en rojo.
+
+LA PALETA DE 256 COLORES (por que 196 es rojo):
+  0-15     : 16 colores basicos (dependen del tema de cada terminal)
+  16-231   : un cubo de 6x6x6 colores. Formula:
+               codigo = 16 + 36*R + 6*G + B   (R, G, B de 0 a 5)
+  232-255  : 24 grises
+
+  Ejemplos de nuestros colores con la formula:
+    196 = 16 + 36*5 + 6*0 + 0  -> R=5 G=0 B=0 -> rojo puro
+     46 = 16 + 36*0 + 6*5 + 0  -> R=0 G=5 B=0 -> verde puro
+    226 = 16 + 36*5 + 6*5 + 0  -> R=5 G=5 B=0 -> amarillo
+     51 = 16 + 36*0 + 6*5 + 5  -> R=0 G=5 B=5 -> cian
+    201 = 16 + 36*5 + 6*0 + 5  -> R=5 G=0 B=5 -> magenta
+
+Por que 256 colores y no otra opcion:
+  - 16 colores basicos: cada terminal los pinta distinto segun su tema
+    (el "rojo" de una puede ser rosa en otra). No controlas el resultado.
+  - Truecolor (\x1b[38;2;R;G;Bm, 16 millones): no todas las terminales
+    lo soportan.
+  - 256: lo soporta practicamente cualquier terminal actual y el color
+    sale igual en todas. Es el punto medio seguro.
+
+------------------------------------------------------------------
+11.3 NIVEL 2: LAS PALETAS DE SIMBOLOS (ui/renderer/base.py)
+------------------------------------------------------------------
+Una "paleta" es una dataclass que dice QUE CARACTER se usa para cada
+parte del dibujo. No dibuja nada: solo guarda simbolos.
+
+LineRenderPalette (base.py:22) -- la que usa el menu. Campos:
+
+  Campo              Por defecto  Para que
+  -----------------  -----------  ------------------------------------
+  horizontal         ━            pared horizontal
+  vertical           ┃            pared vertical
+  top_left           ┏            esquina: conecta abajo + derecha
+  top_right          ┓            esquina: conecta abajo + izquierda
+  bottom_left        ┗            esquina: conecta arriba + derecha
+  bottom_right       ┛            esquina: conecta arriba + izquierda
+  tee_down           ┳            "T": izquierda + derecha + abajo
+  tee_up             ┻            "T": izquierda + derecha + arriba
+  tee_right          ┣            "T": arriba + abajo + derecha
+  tee_left           ┫            "T": arriba + abajo + izquierda
+  cross / junction   ╋            cruce de 4 paredes
+  entry              E            celda de entrada
+  exit               S            celda de salida
+  path_horizontal    ─            camino recto horizontal
+  path_vertical      │            camino recto vertical
+  path_top_left      ╭            camino que gira: abajo + derecha
+  path_top_right     ╮            camino que gira: abajo + izquierda
+  path_bottom_left   ╰            camino que gira: arriba + derecha
+  path_bottom_right  ╯            camino que gira: arriba + izquierda
+  pattern            █            celda cerrada (las del 42)
+  empty              (espacio)    pasillo vacio
+
+Es frozen=True (inmutable): una vez creada no se modifica. Para otra
+paleta se crea otra instancia, cambiando solo los campos que hagan falta
+(los demas se quedan con su valor por defecto).
+
+RenderPalette (base.py:10) es la del renderer ANTIGUO (ascii_renderer,
+bloques █ y camino ◆). El menu ya NO la usa; se conserva porque sigue
+cumpliendo el Protocol Renderer y tiene tests.
+
+------------------------------------------------------------------
+11.4 NIVEL 3: LOS 4 ESTILOS DE PARED (theme.py:36, LINE_STYLES)
+------------------------------------------------------------------
+LINE_STYLES es una TUPLA con 4 paletas. Cada una cambia SOLO los 12
+campos de pared (horizontal, vertical, esquinas, tes y cruces). El
+camino, E, S y el 42 no se tocan, asi que se ven igual en los 4 estilos.
+
+  Indice  Nombre      Aspecto
+  ------  ----------  -----------------------------------------
+  0       grueso      ┏━━┳━┓ ┃ ┣━━╋━┫ ┗━━┻━┛   (LineRenderPalette())
+  1       fino        ┌──┬─┐ │ ├──┼─┤ └──┴─┘
+  2       redondeado  ╭──┬─╮ │ ├──┼─┤ ╰──┴─╯
+  3       doble       ╔══╦═╗ ║ ╠══╬═╣ ╚══╩═╝
+
+Por que tupla y no lista: es fija, nadie deberia modificarla en
+ejecucion, y rng.choice() funciona igual con una tupla.
+
+------------------------------------------------------------------
+11.5 NIVEL 4: LOS COLORES (theme.py)
+------------------------------------------------------------------
+ColourTheme (theme.py:13) -- dataclass frozen con 5 campos, uno por cada
+elemento del laberinto que se colorea:
+
+    wall     color de las paredes
+    path     color del camino
+    pattern  color de las celdas del 42
+    entry    color de la E
+    exit     color de la S
+
+Cada campo es un int (codigo de 0 a 255) o None. None = "sin color".
+
+PLAIN_THEME = ColourTheme() (theme.py:34): todo None -> sin colores. Se
+usa en la salida NO interactiva (redirigida a un archivo), donde los
+codigos ANSI serian basura.
+
+_COLOUR_CHOICES (theme.py:85): la lista de colores que puede tocar. 14
+colores vivos, elegidos para que se lean bien en fondo oscuro Y claro:
+
+    196 rojo      202 naranja   214 ambar     226 amarillo
+    118 lima       46 verde      49 aguamarina 51 cian
+     39 azul cielo 27 azul       93 morado    129 violeta
+    201 magenta   213 rosa
+
+colourize(text, colour) (theme.py:103) -- LA funcion que pone el color:
+
+    if colour is None or not text:
+        return text                                  # nada que hacer
+    return f"\x1b[38;5;{colour}m{text}{RESET}"      # color + texto + reset
+
+Dos casos especiales: sin color devuelve el texto tal cual (asi
+PLAIN_THEME no mete ningun codigo) y texto vacio devuelve "" (no tiene
+sentido abrir y cerrar un color para nada).
+
+MazeStyle (theme.py:27) -- junta las dos cosas que definen el aspecto:
+    palette: LineRenderPalette  (QUE simbolos)
+    colours: ColourTheme        (QUE colores)
+
+DEFAULT_STYLE = MazeStyle(LINE_STYLES[0], PLAIN_THEME) (theme.py:82):
+paredes gruesas y sin color.
+
+------------------------------------------------------------------
+11.6 NIVEL 5: EL SORTEO ALEATORIO DE COLORES Y ESTILO
+------------------------------------------------------------------
+Esto es lo que pasa CADA VEZ que arranca el programa y CADA VEZ que se
+pulsa la opcion 3.
+
+PASO A: random_colour_theme(rng) (theme.py:118)
+
+    wall, path, pattern, entry, exit = rng.sample(_COLOUR_CHOICES, 5)
+
+  rng.sample(lista, 5) saca 5 elementos SIN REPETIR (como sacar 5 bolas
+  de una bolsa sin devolverlas). Por eso los 5 elementos del laberinto
+  SIEMPRE tienen colores distintos: el camino nunca sale del mismo color
+  que las paredes, ni la E del mismo que la S.
+
+  Por que sample y no 5 veces rng.choice(): choice puede repetir (como
+  sacar la bola y devolverla a la bolsa). Con choice podria salir el
+  camino del mismo color que las paredes y no se veria.
+
+  Ejemplo real con Random(1):
+    ColourTheme(wall=214, path=27, pattern=202, entry=118, exit=129)
+    -> paredes ambar, camino azul, 42 naranja, E lima, S violeta
+
+PASO B: random_maze_style(rng, current) (theme.py:137)
+
+    while True:
+        style = MazeStyle(
+            palette=rng.choice(LINE_STYLES),        # 1 de los 4 estilos
+            colours=random_colour_theme(rng),       # 5 colores distintos
+        )
+        if style != current:                        # distinto al actual?
+            return style                            # si -> lo devuelvo
+                                                    # no -> sorteo otra vez
+
+  - rng.choice(LINE_STYLES): elige 1 de los 4 estilos al azar (puede
+    repetir el estilo anterior; lo que cambia seguro es el conjunto).
+  - style != current: como MazeStyle, ColourTheme y LineRenderPalette
+    son dataclasses, Python compara TODOS sus campos automaticamente.
+    Dos estilos son "iguales" solo si coinciden la paleta y los 5
+    colores en el mismo orden.
+  - El while True garantiza que la opcion 3 SIEMPRE cambia algo
+    visible. En la practica casi nunca repite: hay 14*13*12*11*10 =
+    240.240 combinaciones de colores x 4 estilos = 960.960 aspectos
+    posibles. El bucle es una red de seguridad, no un caso frecuente.
+
+  Ejemplo real con Random(7), pulsando 3 dos veces:
+    1a: estilo 2 (redondeado), ColourTheme(wall=214, path=49,
+        pattern=93, entry=196, exit=202)
+    2a: estilo 0 (grueso),     ColourTheme(wall=46, path=27,
+        pattern=196, entry=39, exit=226)
+
+PASO C: de donde sale el "rng" (ui/cli.py, main)
+
+    rng = style_rng or Random()
+    view = _View(result, style=random_maze_style(rng, DEFAULT_STYLE))
+
+  - Random() SIN semilla usa el reloj/sistema -> colores distintos en
+    cada ejecucion del programa.
+  - El PRIMER sorteo se hace contra DEFAULT_STYLE, asi que el arranque
+    nunca sale sin colores.
+  - Ese mismo rng se pasa a _run_interactions y se reutiliza en cada
+    pulsacion de la opcion 3.
+  - IMPORTANTE: es un Random DISTINTO del que usa mazegen para el
+    laberinto. Por eso: (1) cambiar colores nunca cambia el laberinto;
+    (2) la SEED del config sigue dando SIEMPRE el mismo laberinto,
+    aunque los colores cambien entre ejecuciones.
+  - Los tests pasan style_rng=Random(numero) para que los colores sean
+    predecibles y se puedan comprobar.
+
+------------------------------------------------------------------
+11.7 NIVEL 6: COMO SE DIBUJAN LAS PAREDES (line_renderer.py)
+------------------------------------------------------------------
+Usamos un laberinto de 2x2 como ejemplo. mazegen nos da:
+
+    celda (0,0): abierta al ESTE (hacia (1,0))
+    celda (1,0): abierta al SUR  (hacia (1,1))
+    celda (0,1): cerrada por los 4 lados (hace de celda del "42")
+    celda (1,1): la salida
+    entrada (0,0), salida (1,1), camino "ES"
+
+PASO 1 -- El canvas (_build_canvas, line_renderer.py:76)
+  El canvas es una lista de listas de caracteres de tamano
+  (2*alto + 1) filas x (2*ancho + 1) columnas. Para 2x2 -> 5x5.
+
+  Por que el doble mas uno: entre cada par de celdas hace falta UN hueco
+  para la pared que las separa, y uno mas en cada borde:
+
+      columna:  0   1   2   3   4
+                |   |   |   |   |
+              borde celda pared celda borde
+
+  Tipos de posicion en el canvas:
+    (impar, impar) -> CENTRO de una celda
+    (par, impar)   -> pared HORIZONTAL (encima o debajo de una celda)
+    (impar, par)   -> pared VERTICAL (izquierda o derecha)
+    (par, par)     -> ESQUINA / CRUCE (se calcula al final)
+
+  Formulas:
+    _canvas_coordinates(pos) = (pos.y*2 + 1, pos.x*2 + 1)   (fila, col)
+        celda (0,0) -> canvas (1,1);  celda (1,1) -> canvas (3,3)
+    _canvas_wall_coordinates(pos, pared) = centro + Wall.delta
+        Wall.delta: NORTE (0,-1), ESTE (1,0), SUR (0,1), OESTE (-1,0)
+        pared ESTE de (0,0): (1,1) + (x+1) -> canvas (1,2)
+
+PASO 2 -- Poner las paredes cerradas (line_renderer.py:84-95)
+  Para cada celda: si esta cerrada por los 4 lados (walls == ALL_WALLS)
+  su centro es █ (pattern); si no, un espacio. Y para cada pared
+  CERRADA de esa celda se pone el simbolo:
+      NORTE o SUR  -> horizontal (━)
+      ESTE u OESTE -> vertical   (┃)
+  Las paredes abiertas se quedan en espacio (pasillo).
+
+  Estado del canvas en este momento (REAL; "·" = espacio):
+
+      fila 0   ·━·━·
+      fila 1   ┃···┃
+      fila 2   ·━···
+      fila 3   ┃█┃·┃
+      fila 4   ·━·━·
+
+  Las esquinas (par, par) siguen vacias: todavia no sabemos que
+  simbolo va en cada una.
+
+PASO 3 -- Calcular esquinas y cruces (_draw_junctions y
+_junction_symbol, line_renderer.py:99 y :213)
+  Para CADA posicion (par, par) se miran sus 4 vecinos:
+      arriba    = canvas[y-1][x] es una pared VERTICAL?
+      abajo     = canvas[y+1][x] es una pared VERTICAL?
+      izquierda = canvas[y][x-1] es una pared HORIZONTAL?
+      derecha   = canvas[y][x+1] es una pared HORIZONTAL?
+  Se cuenta cuantos son True y se elige el simbolo:
+
+      cuantos  cuales                     simbolo  (estilo grueso)
+      -------  -------------------------  -------
+      0        ninguno                    espacio
+      1        arriba o abajo             ┃
+      1        izquierda o derecha        ━
+      2        izquierda + derecha        ━
+      2        arriba + abajo             ┃
+      2        abajo + derecha            ┏  top_left
+      2        abajo + izquierda          ┓  top_right
+      2        arriba + derecha           ┗  bottom_left
+      2        arriba + izquierda         ┛  bottom_right
+      3        izq + der + abajo          ┳  tee_down
+      3        izq + der + arriba         ┻  tee_up
+      3        arriba + abajo + derecha   ┣  tee_right
+      3        arriba + abajo + izquierda ┫  tee_left
+      4        todos                      ╋  cross
+
+  Calculos REALES de nuestro ejemplo:
+    esquina (0,0): abajo ┃ si, derecha ━ si       -> 2 -> ┏
+    esquina (0,2): izquierda ━, derecha ━          -> 2 -> ━
+    esquina (2,0): arriba ┃, abajo ┃, derecha ━    -> 3 -> ┣
+    esquina (2,2): abajo ┃, izquierda ━ (arriba y
+                   derecha son espacios: pasillo)  -> 2 -> ┓
+    esquina (2,4): arriba ┃, abajo ┃              -> 2 -> ┃
+    esquina (4,2): arriba ┃, izquierda ━, derecha ━ -> 3 -> ┻
+
+  Resultado final de las paredes (REAL):
+
+      ┏━━━┓
+      ┃   ┃
+      ┣━┓ ┃
+      ┃█┃ ┃
+      ┗━┻━┛
+
+  Detalle fino: las esquinas solo miran posiciones de PARED (par-impar
+  o impar-par), nunca otras esquinas. Por eso el orden en que se
+  calculan no importa.
+
+  Por que se calculan AL FINAL y no se fijan de antemano: el simbolo
+  correcto de una esquina depende de que paredes la tocan, y eso cambia
+  en cada laberinto. Mirando a los vecinos las lineas SIEMPRE quedan
+  unidas, sin huecos ni puntas sueltas. Y como la funcion recibe la
+  paleta, el mismo calculo sirve para los 4 estilos: solo cambia que
+  caracter devuelve.
+
+------------------------------------------------------------------
+11.8 NIVEL 7: EL CAMINO COMO LINEA CONTINUA (path_cells,
+     line_renderer.py:104)
+------------------------------------------------------------------
+El camino mas corto llega de mazegen como texto: "ES" (Este, Sur).
+
+PASO 1 -- Convertir letras en posiciones
+    positions = [entrada] y por cada letra un paso con position.move():
+    "ES" -> [(0,0), (1,0), (1,1)]
+
+PASO 2 -- Rellenar el hueco ENTRE cada par de celdas (_path_gap)
+  Entre dos celdas seguidas del camino siempre hay una pared ABIERTA
+  (si no, no podrias pasar). En el canvas es la posicion intermedia:
+      medio = ((fila1 + fila2) // 2, (col1 + col2) // 2)
+  Si las dos celdas estan en la misma fila -> ─, si no -> │.
+  Esto es lo que hace que la linea sea CONTINUA y no puntos sueltos.
+    (0,0)->(1,0): canvas (1,1)->(1,3), medio (1,2), misma fila -> ─
+    (1,0)->(1,1): canvas (1,3)->(3,3), medio (2,3)              -> │
+
+PASO 3 -- El simbolo de cada celda segun por donde entra y sale
+  _direction(celda, vecina) dice hacia donde esta la vecina (NORTE,
+  SUR, ESTE u OESTE). Se calcula hacia la celda anterior y hacia la
+  siguiente, y con esas 2 direcciones (_path_symbol,
+  line_renderer.py:157):
+
+      direcciones        simbolo
+      -----------------  -------
+      ESTE + OESTE       ─   (sigue recto en horizontal)
+      NORTE + SUR        │   (sigue recto en vertical)
+      SUR + ESTE         ╭
+      SUR + OESTE        ╮
+      NORTE + ESTE       ╰
+      NORTE + OESTE      ╯
+
+    celda (1,0): la anterior (0,0) esta al OESTE, la siguiente (1,1)
+    al SUR -> {SUR, OESTE} -> ╮
+
+  La entrada y la salida NO se dibujan con linea (se saltan): ahi van
+  la E y la S.
+
+  Resultado REAL: path_cells = [(1, 2, '─'), (1, 3, '╮'), (2, 3, '│')]
+  Es una lista EN ORDEN de recorrido: la animacion la usa tal cual
+  para dibujar el camino de la E a la S.
+
+  Laberinto final con camino (REAL):
+
+      ┏━━━┓
+      ┃E─╮┃
+      ┣━┓│┃
+      ┃█┃S┃
+      ┗━┻━┛
+
+  Por que el camino usa linea FINA y las paredes (por defecto) GRUESA:
+  asi se diferencian por la forma, y ademas por el color.
+
+------------------------------------------------------------------
+11.9 NIVEL 8: PINTAR CON COLOR (render y _join,
+     line_renderer.py:29 y :58)
+------------------------------------------------------------------
+El canvas solo guarda CARACTERES. Los colores se apuntan aparte en un
+diccionario: colours[(fila, columna)] = codigo_de_color.
+
+Orden dentro de render():
+  1. _build_canvas()   -> paredes y esquinas (sin color todavia)
+  2. _pattern_colours() -> apunta el color "pattern" en cada celda █
+  3. _draw_path()       -> si show_path: pone el camino y apunta su color
+  4. _mark_position()   -> pone E y S con sus colores (AL FINAL, para
+                           que nada las tape)
+  5. _join()            -> convierte todo en texto con los codigos ANSI
+
+_join() recorre cada fila y, para cada caracter, decide su color:
+    colours.get((y, x), self._wall_colour(simbolo))
+  - Si esta en el diccionario (camino, E, S, 42) usa ese color.
+  - Si no: _wall_colour() -> si es espacio, None (sin color); si no,
+    es una pared -> color de paredes.
+
+OPTIMIZACION: agrupa caracteres SEGUIDOS del mismo color ("runs") y
+pone UN solo codigo por grupo. En vez de rojo+┏+reset, rojo+━+reset...
+escribe rojo+"┏━━━┓"+reset. Menos codigos = texto mas corto = la
+terminal lo pinta mas rapido.
+
+Salida REAL con ColourTheme(wall=196, path=46, pattern=226, entry=51,
+exit=201), fila 1 ("┃E─╮┃"):
+
+    \x1b[38;5;196m┃\x1b[0m      <- pared, rojo
+    \x1b[38;5;51mE\x1b[0m       <- entrada, cian
+    \x1b[38;5;46m─╮\x1b[0m      <- camino, verde (2 caracteres, UN codigo)
+    \x1b[38;5;196m┃\x1b[0m      <- pared, rojo
+
+------------------------------------------------------------------
+11.10 NIVEL 9: EL MARCO COMPLETO (ui/frame.py)
+------------------------------------------------------------------
+TerminalFrameComposer.compose(FrameState) pega en orden, separados por
+una linea en blanco:
+    1. el laberinto ya dibujado
+    2. "Path: shown" o "Path: hidden"
+    3. el menu (_actions_text: "Actions:", las 4 opciones y "Choice?")
+    4. "Status: ..." SOLO si hay mensaje
+
+El laberinto va SIEMPRE arriba del todo. Eso importa para la animacion:
+la fila N del canvas es la fila N de la pantalla.
+
+------------------------------------------------------------------
+11.11 NIVEL 10: ESCRIBIR EN LA TERMINAL SIN PARPADEO
+      (ui/terminal_screen.py)
+------------------------------------------------------------------
+EL PROBLEMA: si en cada cambio haces "borrar pantalla + escribir todo",
+durante un instante la pantalla se ve VACIA -> parpadeo ("flicker").
+
+LAS 4 SOLUCIONES QUE USAMOS:
+
+1. Borrar la pantalla UNA sola vez (clear_once, terminal_screen.py:45).
+   Solo el primer frame hace \x1b[2J. Los demas hacen \x1b[H (cursor
+   arriba a la izquierda) y ESCRIBEN ENCIMA del frame anterior. Nunca
+   hay un momento con la pantalla vacia.
+
+2. Rellenar con espacios (_padded_frame, terminal_screen.py:92).
+   Si una linea nueva es mas corta que la anterior, quedarian letras
+   viejas al final. Por eso cada linea se completa con espacios hasta
+   el ancho mas grande entre el frame actual y el anterior
+   (self._previous_width).
+
+   Detalle IMPORTANTE con colores: el ancho se mide con _visible_len()
+   (terminal_screen.py:103), que BORRA los codigos ANSI antes de contar
+   con la expresion regular \x1b\[[0-9;?]*[A-Za-z]. Sin esto,
+   "\x1b[38;5;196m┃\x1b[0m" contaria como 16 caracteres cuando en
+   pantalla ocupa 1, y el relleno quedaria mal.
+
+3. Borrar lo que sobra por debajo (CLEAR_BELOW = \x1b[J).
+   Despues del frame se borra todo lo que haya debajo: lo que escribio
+   el usuario, mensajes de error viejos, lineas de un frame anterior mas
+   largo...
+
+4. Modo sincronizado (BEGIN_SYNC \x1b[?2026h ... END_SYNC \x1b[?2026l).
+   Le dice a la terminal "no pintes nada hasta que termine el frame".
+   Asi se ve el frame entero de golpe, nunca a medio escribir. Las
+   terminales que no lo soportan simplemente lo ignoran (no rompe nada).
+
+render_frame(text) (terminal_screen.py:65) hace, en este orden:
+    BEGIN_SYNC -> (solo la 1a vez: CLEAR_SCREEN) -> MOVE_HOME
+    -> frame rellenado -> CLEAR_BELOW -> END_SYNC -> flush()
+
+draw_at(fila, columna, texto) (terminal_screen.py:81): escribe SOLO un
+trocito en una posicion exacta, sin redibujar nada mas:
+    f"\x1b[{fila + 1};{columna + 1}H{texto}"
+El +1 es porque el codigo usa filas/columnas desde 0 (como el canvas) y
+la terminal cuenta desde 1.
+
+Ademas, TerminalScreen es un "context manager" (se usa con "with"):
+__enter__ oculta el cursor (para que no se vea saltando mientras se
+dibuja) y __exit__ lo vuelve a mostrar SIEMPRE, incluso si hay un error.
+
+------------------------------------------------------------------
+11.12 NIVEL 11: LA ANIMACION DEL CAMINO (ui/cli.py, _Display)
+------------------------------------------------------------------
+_Display.show(view, path_delay):
+    if animar and path_delay > 0 and view.show_path:
+        _animate_path(view, path_delay)
+    render_frame(frame completo)
+
+_animate_path():
+  1. render_frame(frame SIN camino)  -> laberinto + "Path: shown", pero
+                                        el camino aun no esta
+  2. para cada (fila, col, simbolo) de path_cells(), EN ORDEN:
+         draw_at(fila, col, simbolo_con_color)  -> escribe 1 caracter
+         sleep(path_delay)                      -> espera
+  3. (vuelve a show) render_frame(frame completo) -> identico a lo que ya
+     se ve, deja la pantalla y el estado interno sincronizados
+
+Por que NO parpadea: durante la animacion no se redibuja NADA, solo se
+escribe 1 caracter nuevo cada vez con draw_at. Y como el laberinto esta
+arriba del todo (11.10), la fila del canvas es la fila de la pantalla.
+
+Cuando se anima y cuando no:
+  SI: al arrancar, opcion 1 (regenerar), opcion 2 cuando MUESTRA el
+      camino.
+  NO: opcion 3 (solo cambia colores), opcion 4, errores, al borrar el
+      mensaje de error, si PATH_DELAY=0, y si la salida no es una
+      terminal (output_stream.isatty() es False: redirigida a archivo o
+      en los tests).
+
+Velocidad: PATH_DELAY del config (segundos por caracter del camino).
+Por defecto 0.05 (DEFAULT_PATH_DELAY en ui/config_loader.py:19), de 0 a
+1. Ojo: es por CARACTER, incluidos los huecos entre celdas, asi que un
+camino largo tarda mas.
+
+------------------------------------------------------------------
+11.13 NIVEL 12: EL MENU Y SUS ESTADOS (ui/cli.py, _View y
+      _run_interactions)
+------------------------------------------------------------------
+_View (dataclass frozen) guarda TODO lo que se ve:
+    result           el laberinto (de mazegen)
+    show_path        si se ve el camino
+    style            MazeStyle actual (simbolos + colores)
+    status           el texto de la linea "Status:"
+    status_is_error  si ese texto es un error (se borra solo)
+
+Cada opcion crea una _View NUEVA con dataclasses.replace(view, ...),
+cambiando solo lo necesario, y la manda a dibujar:
+    1 -> result nuevo (relee config.txt)  -> show(view, path_delay)
+    2 -> show_path invertido              -> show(view, path_delay)
+    3 -> style nuevo (random_maze_style)  -> show(view)
+    4 -> status "Goodbye."                -> show(view) y sale
+
+Mensajes de error que se borran solos (ERROR_STATUS_SECONDS = 4.0):
+  Al principio de cada vuelta del menu:
+      if view.status_is_error and not input_ready(4.0):
+          view = replace(view, status="", status_is_error=False)
+          display.show(view)
+  input_ready = _stdin_ready: usa select.select() sobre el teclado con
+  un timeout de 4 segundos. Si el usuario escribe algo y pulsa Enter
+  antes, devuelve True y se lee la opcion normalmente. Si pasan los 4
+  segundos sin nada, devuelve False y se redibuja sin el mensaje.
+  Solo se usa con una terminal real; en los tests se inyecta una
+  funcion falsa.
+
+------------------------------------------------------------------
+11.14 TRACE COMPLETO: QUE PASA AL PULSAR "3"
+------------------------------------------------------------------
+  1. _read_choice() lee "3".
+  2. random_maze_style(style_rng, view.style):
+       a. rng.choice(LINE_STYLES) -> por ejemplo el estilo 3 (doble)
+       b. random_colour_theme(rng) -> rng.sample(14 colores, 5)
+       c. si es igual al estilo actual, repite a y b
+  3. view = replace(view, style=<nuevo>, status="Changed maze colours
+     and style.")
+  4. display.show(view)  (sin path_delay -> sin animacion)
+  5. _compose_view(view):
+       a. LineRenderer(style.palette, style.colours).render(result,
+          show_path) -> canvas, esquinas con los simbolos del estilo
+          nuevo, camino, colores, _join con codigos ANSI
+       b. TerminalFrameComposer().compose(...) -> + Path + menu + Status
+  6. screen.render_frame(texto): sync, cursor arriba, sobrescribe,
+     rellena, borra lo de abajo, fin de sync.
+  Lo que NO cambia: el laberinto (result), el archivo maze.txt y si el
+  camino se ve o no.
+
+------------------------------------------------------------------
+11.15 PREGUNTAS DE EVALUACION SOBRE LA PARTE VISUAL
+------------------------------------------------------------------
+P: "Como funcionan los colores?"
+R: Con codigos de escape ANSI de 256 colores: "\x1b[38;5;Nm" antes del
+   texto y "\x1b[0m" despues. Lo hace colourize() en theme.py. Cada
+   elemento (paredes, camino, 42, E, S) tiene su color en un ColourTheme.
+
+P: "Como eligen los colores al azar?"
+R: rng.sample(_COLOUR_CHOICES, 5): 5 colores DISTINTOS de una lista de
+   14. sample no repite, asi que ningun elemento comparte color con
+   otro.
+
+P: "Como se aseguran de que la opcion 3 siempre cambie algo?"
+R: random_maze_style() sortea en un while True y solo devuelve el
+   resultado si es distinto (!=) al estilo actual. Las dataclasses se
+   comparan campo a campo automaticamente.
+
+P: "Cambiar los colores cambia el laberinto?"
+R: No. Los colores usan un Random() propio creado en cli.py, separado
+   del Random(seed) de mazegen. La opcion 3 solo cambia la _View.style;
+   ni el laberinto ni maze.txt se tocan.
+
+P: "Como deciden que esquina (┏ ┳ ╋...) dibujar?"
+R: Las esquinas se calculan al final mirando las 4 posiciones vecinas:
+   que lados tienen pared. Segun cuantas y cuales, se elige el simbolo
+   (tabla en 11.7). Asi las lineas siempre quedan unidas.
+
+P: "Por que el canvas mide 2*ancho+1?"
+R: Cada celda necesita su centro, y entre cada dos celdas hace falta un
+   hueco para la pared que las separa, mas los bordes.
+
+P: "Como consiguen que el camino sea una linea continua?"
+R: Ademas de cada celda del camino, se dibuja el hueco (pared abierta)
+   entre cada dos celdas seguidas, y cada celda recibe ─ │ o una esquina
+   ╭ ╮ ╰ ╯ segun de donde viene y a donde va.
+
+P: "Como evitan el parpadeo?"
+R: Cuatro cosas: la pantalla solo se borra una vez al principio (despues
+   se sobrescribe), las lineas se rellenan con espacios, se borra lo que
+   sobra debajo con \x1b[J, y se usa el modo sincronizado ?2026. En la
+   animacion ni siquiera se redibuja: solo se escribe el caracter nuevo
+   con draw_at.
+
+P: "Por que los colores no rompen el relleno de las lineas?"
+R: Porque el ancho se mide con _visible_len(), que quita los codigos
+   ANSI con una expresion regular antes de contar.
+
+P: "Por que en los tests (o al redirigir a un archivo) no hay animacion
+    ni colores?"
+R: La animacion solo se activa si stdout.isatty() (es una terminal
+   real). Y en modo no interactivo se usa DEFAULT_STYLE (sin colores),
+   para no llenar el archivo de codigos ANSI.
+
+P: "Por que no usaron los 16 colores basicos o truecolor?"
+R: Los 16 basicos cambian segun el tema de cada terminal; truecolor no
+   lo soportan todas. 256 colores funciona en casi todas y se ve igual.
+
+P: "Como se configura la velocidad de la animacion?"
+R: Clave opcional PATH_DELAY en config.txt (0 a 1 segundos por
+   caracter, 0 la desactiva), validada por Pydantic en MazeConfig.
+
+P: "Como hacen que el mensaje de error desaparezca?"
+R: Con select.select() sobre el teclado y un timeout de 4 segundos
+   (ERROR_STATUS_SECONDS). Si no llega nada, se redibuja la _View sin el
+   mensaje.
+
+------------------------------------------------------------------
+11.16 MODIFICACIONES VISUALES EN VIVO (que tocar)
+------------------------------------------------------------------
+--- "Que las paredes sean siempre de un color fijo" ---
+  ui/renderer/theme.py, random_colour_theme(): sacar 4 colores con
+  rng.sample(_COLOUR_CHOICES, 4) para el resto y poner wall=196 (o el que
+  pidan). Ojo: si ese color esta en _COLOUR_CHOICES, quitarlo de la
+  lista para que no se repita en otro elemento.
+
+--- "Que el 42 tenga siempre un color concreto" (esto es un BONUS del
+    subject: "specific colours to display the 42 pattern") ---
+  Igual que el anterior pero con pattern=... en random_colour_theme().
+
+--- "Arranquen sin colores / sin azar" ---
+  ui/cli.py, main(): cambiar
+      style=random_maze_style(rng, DEFAULT_STYLE)
+  por  style=DEFAULT_STYLE
+  (o por un MazeStyle(palette=LINE_STYLES[n], colours=ColourTheme(...))
+  fijo).
+
+--- "Anadan un color nuevo a los posibles" ---
+  ui/renderer/theme.py, _COLOUR_CHOICES: anadir el numero (0-255). Usar
+  la formula 16 + 36*R + 6*G + B (seccion 11.2). La lista necesita
+  minimo 5 colores, porque sample() saca 5.
+
+--- "Anadan un estilo de pared nuevo" ---
+  ui/renderer/theme.py, LINE_STYLES: anadir otra LineRenderPalette(...)
+  con los 12 campos de pared (horizontal, vertical, top_left, top_right,
+  bottom_left, bottom_right, junction, tee_up, tee_down, tee_left,
+  tee_right, cross). Los simbolos deben ocupar 1 columna. Un test
+  comprueba que todos los estilos sean distintos entre si.
+
+--- "Cambien el simbolo del camino / de E / de S / del 42" ---
+  ui/renderer/base.py, LineRenderPalette: path_horizontal,
+  path_vertical, path_top_left..., entry, exit, pattern. Despues
+  actualizar tests/test_renderer.py (hay tests que fijan los simbolos
+  por defecto y snapshots de dibujos).
+
+--- "Que el camino sea de puntos y no una linea" ---
+  base.py: poner path_horizontal = path_vertical = las 4 esquinas =
+  "•". Los huecos entre celdas tambien saldran con "•" (quedaria "E•••S").
+  Si quieren SOLO las celdas, sin huecos: en line_renderer.py,
+  path_cells(), quitar la linea cells.append(self._path_gap(...)).
+
+--- "Animacion mas lenta / mas rapida / sin animacion" ---
+  config.txt: PATH_DELAY=0.2 (lenta), PATH_DELAY=0.01 (rapida),
+  PATH_DELAY=0 (sin). Para cambiar el valor por defecto:
+  ui/config_loader.py, DEFAULT_PATH_DELAY.
+
+--- "Que el error dure mas o menos" ---
+  ui/cli.py, ERROR_STATUS_SECONDS = 4.0.
+
+--- "Que TODOS los mensajes de Status se borren solos, no solo los
+    errores" ---
+  ui/cli.py, _run_interactions(): en cada replace(...) poner
+  status_is_error=True (mejor aun: renombrar el campo a algo como
+  status_expires, porque ya no serian solo errores).
+
+--- "Pinten tambien el FONDO de un color" ---
+  ui/renderer/theme.py, colourize(): el fondo es 48 en vez de 38:
+      f"\x1b[48;5;{fondo}m\x1b[38;5;{colour}m{text}{RESET}"
+  (RESET \x1b[0m ya quita las dos cosas).
+
+--- "Paredes en negrita" ---
+  colourize(): anadir "\x1b[1m" antes del color. RESET tambien la quita.
+
+Despues de CUALQUIER cambio visual: make test + make lint, y probarlo
+de verdad con make run (los tests no ven colores ni animacion reales).
