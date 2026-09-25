@@ -1,5 +1,3 @@
-"""Command-line flow for generating and rendering mazes."""
-
 import sys
 from collections.abc import Sequence
 from pathlib import Path

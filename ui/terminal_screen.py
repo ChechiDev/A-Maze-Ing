@@ -1,5 +1,3 @@
-"""Terminal screen control helpers for stable frame redraws."""
-
 import sys
 from types import TracebackType
 from typing import Literal, Self, TextIO
@@ -68,7 +66,7 @@ class TerminalScreen:
         self._stream.flush()
 
     def _padded_frame(self, text: str) -> str:
-        lines = text.split("\n")
+        lines = text.rstrip("\n").split("\n")
         width = max((len(line) for line in lines), default=0)
         target_width = max(width, self._previous_width)
         padded_lines = [line.ljust(target_width) for line in lines]
@@ -80,4 +78,4 @@ class TerminalScreen:
 
         self._previous_line_count = current_line_count
         self._previous_width = width
-        return "\n".join(padded_lines)
+        return "\n".join(padded_lines) + "\n"
