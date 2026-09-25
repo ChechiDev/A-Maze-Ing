@@ -1,7 +1,10 @@
 """Command-line flow for generating and rendering mazes."""
 
+import select
 import sys
-from collections.abc import Sequence
+import time
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass, replace
 from pathlib import Path
 from random import Random
 from typing import TextIO
@@ -22,6 +25,50 @@ from ui.terminal_screen import TerminalScreen
 
 SUCCESS = 0
 FAILURE = 1
+ERROR_STATUS_SECONDS = 4.0
+
+
+@dataclass(frozen=True, slots=True)
+class _View:
+    """What the interactive screen currently shows."""
+
+    result: MazeResult
+    show_path: bool = True
+    style: MazeStyle = DEFAULT_STYLE
+    status: str = ""
+    status_is_error: bool = False
+
+
+class _Display:
+    """Draw views on the terminal screen, animating the path when enabled."""
+
+    def __init__(
+        self,
+        screen: TerminalScreen,
+        animate: bool,
+        sleep: Callable[[float], None],
+    ) -> None:
+        self._screen = screen
+        self._animate = animate
+        self._sleep = sleep
+
+    def show(self, view: _View, path_delay: float = 0.0) -> None:
+        """Render a view; trace its path cell by cell when a delay is given.
+
+        Args:
+            view: State to draw.
+            path_delay: Seconds between path cells, ``0`` to draw at once.
+        """
+        if self._animate and path_delay > 0 and view.show_path:
+            self._animate_path(view, path_delay)
+        self._screen.render_frame(_compose_view(view))
+
+    def _animate_path(self, view: _View, path_delay: float) -> None:
+        self._screen.render_frame(_compose_view(view, draw_path=False))
+        renderer = LineRenderer(view.style.palette, view.style.colours)
+        for row, column, symbol in renderer.path_cells(view.result):
+            self._screen.draw_at(row, column, renderer.paint_path(symbol))
+            self._sleep(path_delay)
 
 
 def main(
@@ -31,8 +78,29 @@ def main(
     input_stream: TextIO | None = None,
     interactive: bool = True,
     style_rng: Random | None = None,
+    animate: bool | None = None,
+    sleep: Callable[[float], None] = time.sleep,
+    input_ready: Callable[[float], bool] | None = None,
 ) -> int:
-    """Run the CLI flow and return a process-style exit code."""
+    """Run the CLI flow and return a process-style exit code.
+
+    Args:
+        argv: Command-line arguments; defaults to ``sys.argv[1:]``.
+        stdout: Stream for the maze screen; defaults to ``sys.stdout``.
+        stderr: Stream for errors and warnings; defaults to ``sys.stderr``.
+        input_stream: Stream for menu choices; defaults to standard input.
+        interactive: Whether to run the menu after the first render.
+        style_rng: Random source for option 3; defaults to an unseeded one.
+        animate: Whether to animate the path; defaults to whether ``stdout``
+            is a terminal.
+        sleep: Function used to wait between path animation steps.
+        input_ready: Function that waits up to a timeout for a menu choice
+            and returns whether one is available; defaults to waiting on
+            standard input when no ``input_stream`` is given.
+
+    Returns:
+        ``SUCCESS`` or ``FAILURE``.
+    """
     args = list(sys.argv[1:] if argv is None else argv)
     output_stream = sys.stdout if stdout is None else stdout
     error_stream = sys.stderr if stderr is None else stderr
@@ -52,22 +120,29 @@ def main(
             error_stream.write(f"warning: {result.warning}\n")
         if interactive:
             with TerminalScreen(output_stream) as screen:
-                screen.render_frame(
-                    _compose_frame(result, show_path=True, style=DEFAULT_STYLE),
+                display = _Display(
+                    screen,
+                    output_stream.isatty() if animate is None else animate,
+                    sleep,
                 )
+                rng = style_rng or Random()
+                view = _View(
+                    result,
+                    style=random_maze_style(rng, DEFAULT_STYLE),
+                )
+                display.show(view, config.path_delay)
                 _run_interactions(
                     args[0],
                     config,
-                    result,
-                    screen,
+                    view,
+                    display,
                     error_stream,
                     input_stream,
-                    style_rng or Random(),
+                    rng,
+                    input_ready or _default_input_ready(input_stream),
                 )
         else:
-            output_stream.write(
-                _compose_frame(result, show_path=True, style=DEFAULT_STYLE),
-            )
+            output_stream.write(_compose_view(_View(result)))
     except (ValueError, MazeError, OSError) as error:
         _write_error(error_stream, str(error))
         return FAILURE
@@ -105,17 +180,18 @@ def _regeneration_seed(seed: int | None, regeneration_count: int) -> int | None:
 def _run_interactions(
     config_path: str,
     config: MazeConfig,
-    result: MazeResult,
-    screen: TerminalScreen,
+    view: _View,
+    display: _Display,
     stderr: TextIO,
     input_stream: TextIO | None,
     style_rng: Random,
+    input_ready: Callable[[float], bool],
 ) -> None:
-    show_path = True
-    style = DEFAULT_STYLE
     regeneration_count = 0
-    current_result = result
     while True:
+        if view.status_is_error and not input_ready(ERROR_STATUS_SECONDS):
+            view = replace(view, status="", status_is_error=False)
+            display.show(view)
         choice = _read_choice(input_stream)
         if choice == "1":
             try:
@@ -127,68 +203,54 @@ def _run_interactions(
             except (ValueError, MazeError, OSError) as error:
                 status = f"error: {error} (kept previous maze)"
                 stderr.write(f"{status}\n")
-            else:
-                config = new_config
-                regeneration_count = new_count
-                current_result = new_result
-                status = (
-                    "Reloaded config and re-generated maze."
-                    if config_changed
-                    else "Re-generated maze."
-                )
-                if new_result.warning is not None:
-                    status = f"{status} Warning: {new_result.warning}"
-            screen.render_frame(
-                _compose_frame(
-                    current_result,
-                    show_path,
-                    style,
-                    status=status,
-                ),
+                view = replace(view, status=status, status_is_error=True)
+                display.show(view)
+                continue
+            config = new_config
+            regeneration_count = new_count
+            status = (
+                "Reloaded config and re-generated maze."
+                if config_changed
+                else "Re-generated maze."
             )
+            if new_result.warning is not None:
+                status = f"{status} Warning: {new_result.warning}"
+            view = replace(
+                view,
+                result=new_result,
+                status=status,
+                status_is_error=False,
+            )
+            display.show(view, config.path_delay)
             continue
         if choice == "2":
-            show_path = not show_path
-            screen.render_frame(
-                _compose_frame(
-                    current_result,
-                    show_path,
-                    style,
-                    status=f"Shortest path {'shown' if show_path else 'hidden'}.",
-                ),
+            show_path = not view.show_path
+            view = replace(
+                view,
+                show_path=show_path,
+                status=f"Shortest path {'shown' if show_path else 'hidden'}.",
+                status_is_error=False,
             )
+            display.show(view, config.path_delay)
             continue
         if choice == "3":
-            style = random_maze_style(style_rng, style)
-            screen.render_frame(
-                _compose_frame(
-                    current_result,
-                    show_path,
-                    style,
-                    status="Changed maze colours and style.",
-                ),
+            view = replace(
+                view,
+                style=random_maze_style(style_rng, view.style),
+                status="Changed maze colours and style.",
+                status_is_error=False,
             )
+            display.show(view)
             continue
         if choice == "4":
-            screen.render_frame(
-                _compose_frame(
-                    current_result,
-                    show_path,
-                    style,
-                    status="Goodbye.",
-                ),
+            display.show(
+                replace(view, status="Goodbye.", status_is_error=False),
             )
             return
         status = "invalid choice: use 1, 2, 3, or 4"
         stderr.write(f"{status}\n")
-        screen.render_frame(
-            _compose_frame(
-                current_result,
-                show_path,
-                style,
-                status=status,
-            ),
-        )
+        view = replace(view, status=status, status_is_error=True)
+        display.show(view)
 
 
 def _render(result: MazeResult, show_path: bool, style: MazeStyle) -> str:
@@ -198,18 +260,13 @@ def _render(result: MazeResult, show_path: bool, style: MazeStyle) -> str:
     )
 
 
-def _compose_frame(
-    result: MazeResult,
-    show_path: bool,
-    style: MazeStyle,
-    status: str = "",
-) -> str:
-    rendered = _render(result, show_path, style)
+def _compose_view(view: _View, draw_path: bool = True) -> str:
+    rendered = _render(view.result, view.show_path and draw_path, view.style)
     return TerminalFrameComposer().compose(
         FrameState(
             maze_text=rendered,
-            show_path=show_path,
-            status=status,
+            show_path=view.show_path,
+            status=view.status,
         ),
     )
 
@@ -224,6 +281,27 @@ def _read_choice(input_stream: TextIO | None) -> str:
     if line == "":
         return "4"
     return line.strip()
+
+
+def _default_input_ready(
+    input_stream: TextIO | None,
+) -> Callable[[float], bool]:
+    if input_stream is None and sys.stdin.isatty():
+        return _stdin_ready
+    return _always_ready
+
+
+def _stdin_ready(timeout: float) -> bool:
+    try:
+        ready, _, _ = select.select([sys.stdin], [], [], timeout)
+    except (OSError, ValueError):
+        return True
+    return bool(ready)
+
+
+def _always_ready(timeout: float) -> bool:
+    _ = timeout
+    return True
 
 
 def _write_output_file(path: str, result: MazeResult) -> None:

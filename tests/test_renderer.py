@@ -1,5 +1,6 @@
 from ui.renderer import (
     AsciiRenderer,
+    ColourTheme,
     LineRenderPalette,
     LineRenderer,
     RenderPalette,
@@ -36,7 +37,7 @@ def test_render_palette_uses_default_symbols() -> None:
     palette = RenderPalette()
 
     assert palette.wall == "█"
-    assert palette.path == "●"
+    assert palette.path == "◆"
     assert palette.entry == "E"
     assert palette.exit == "S"
     assert palette.pattern == "█"
@@ -78,7 +79,12 @@ def test_line_render_palette_uses_default_line_symbols() -> None:
     assert palette.cross == "╋"
     assert palette.entry == "E"
     assert palette.exit == "S"
-    assert palette.path == "●"
+    assert palette.path_horizontal == "─"
+    assert palette.path_vertical == "│"
+    assert palette.path_top_left == "╭"
+    assert palette.path_top_right == "╮"
+    assert palette.path_bottom_left == "╰"
+    assert palette.path_bottom_right == "╯"
     assert palette.pattern == "█"
     assert palette.empty == " "
     assert palette.horizontal != "#"
@@ -101,7 +107,12 @@ def test_line_render_palette_accepts_custom_symbols() -> None:
         cross="x",
         entry="I",
         exit="O",
-        path="*",
+        path_horizontal="*",
+        path_vertical="~",
+        path_top_left="1",
+        path_top_right="2",
+        path_bottom_left="3",
+        path_bottom_right="4",
         pattern="X",
         empty="_",
     )
@@ -120,7 +131,12 @@ def test_line_render_palette_accepts_custom_symbols() -> None:
     assert palette.cross == "x"
     assert palette.entry == "I"
     assert palette.exit == "O"
-    assert palette.path == "*"
+    assert palette.path_horizontal == "*"
+    assert palette.path_vertical == "~"
+    assert palette.path_top_left == "1"
+    assert palette.path_top_right == "2"
+    assert palette.path_bottom_left == "3"
+    assert palette.path_bottom_right == "4"
     assert palette.pattern == "X"
     assert palette.empty == "_"
 
@@ -227,7 +243,7 @@ def test_line_renderer_show_path_changes_output() -> None:
     with_path = renderer.render(result, show_path=True)
 
     assert with_path != without_path
-    assert "●" in with_path
+    assert LineRenderPalette().path_horizontal in with_path
 
 
 def test_line_renderer_does_not_modify_grid() -> None:
@@ -255,7 +271,12 @@ def test_line_renderer_uses_custom_palette_symbols() -> None:
         cross="x",
         entry="I",
         exit="O",
-        path="*",
+        path_horizontal="*",
+        path_vertical="~",
+        path_top_left="1",
+        path_top_right="2",
+        path_bottom_left="3",
+        path_bottom_right="4",
         pattern="X",
         empty="_",
     )
@@ -268,7 +289,11 @@ def test_line_renderer_uses_custom_palette_symbols() -> None:
         _l_shaped_result(),
         show_path=True,
     )
-    rendered = junction_rendered + path_rendered
+    empty_rendered = LineRenderer(palette).render(
+        _l_shaped_result(),
+        show_path=False,
+    )
+    rendered = junction_rendered + path_rendered + empty_rendered
 
     assert "=" in rendered
     assert "!" in rendered
@@ -284,6 +309,8 @@ def test_line_renderer_uses_custom_palette_symbols() -> None:
     assert "I" in rendered
     assert "O" in rendered
     assert "*" in rendered
+    assert "~" in rendered
+    assert "2" in rendered
     assert "X" in rendered
     assert "_" in rendered
 
@@ -317,15 +344,52 @@ def test_line_renderer_vertical_corridor_snapshot() -> None:
 def test_line_renderer_l_shaped_path_snapshot() -> None:
     rendered = LineRenderer().render(_l_shaped_result(), show_path=True)
 
-    assert rendered == "┏━━━┓\n┃E ●┃\n┣━┓ ┃\n┃█┃S┃\n┗━┻━┛\n"
+    assert rendered == "┏━━━┓\n┃E─╮┃\n┣━┓│┃\n┃█┃S┃\n┗━┻━┛\n"
 
 
 def test_line_renderer_path_does_not_overwrite_entry_or_exit() -> None:
     rendered = LineRenderer().render(_l_shaped_result(), show_path=True)
 
-    assert "E" in rendered
-    assert "S" in rendered
-    assert rendered.count("●") == 1
+    assert rendered.count("E") == 1
+    assert rendered.count("S") == 1
+
+
+def test_line_renderer_path_is_one_joined_line_through_open_walls() -> None:
+    rendered = LineRenderer().render(_path_result(), show_path=True)
+
+    assert rendered == "┏━━━━━┓\n┃E───S┃\n┗━━━━━┛\n"
+
+
+def test_line_renderer_vertical_path_snapshot() -> None:
+    rendered = LineRenderer().render(_vertical_path_result(), show_path=True)
+
+    assert rendered == "┏━┓\n┃E┃\n┃│┃\n┃│┃\n┃│┃\n┃S┃\n┗━┛\n"
+
+
+def test_line_renderer_draws_every_path_corner() -> None:
+    rendered = LineRenderer().render(_zigzag_result(), show_path=True)
+
+    assert rendered == (
+        "┏━━━┳━┓\n"
+        "┃E─╮┃█┃\n"
+        "┣━━│┣━┫\n"
+        "┃╭─╯┃S┃\n"
+        "┃│━━┛│┃\n"
+        "┃╰───╯┃\n"
+        "┗━━━━━┛\n"
+    )
+
+
+def test_line_renderer_path_cells_follow_walking_order() -> None:
+    cells = LineRenderer().path_cells(_l_shaped_result())
+
+    assert cells == [(1, 2, "─"), (1, 3, "╮"), (2, 3, "│")]
+
+
+def test_line_renderer_paint_path_uses_path_colour() -> None:
+    renderer = LineRenderer(colours=ColourTheme(path=42))
+
+    assert renderer.paint_path("─") == "\x1b[38;5;42m─\x1b[0m"
 
 
 def test_line_renderer_import_has_no_cli_side_effects() -> None:
@@ -380,6 +444,35 @@ def _vertical_result() -> MazeResult:
         entry=Position(0, 0),
         exit=Position(0, 1),
         shortest_path="S",
+    )
+
+
+def _vertical_path_result() -> MazeResult:
+    grid = Grid(1, 3)
+    grid.open_wall(Position(0, 0), Wall.SOUTH)
+    grid.open_wall(Position(0, 1), Wall.SOUTH)
+    return MazeResult(
+        grid=grid,
+        entry=Position(0, 0),
+        exit=Position(0, 2),
+        shortest_path="SS",
+    )
+
+
+def _zigzag_result() -> MazeResult:
+    grid = Grid(3, 3)
+    grid.open_wall(Position(0, 0), Wall.EAST)
+    grid.open_wall(Position(1, 0), Wall.SOUTH)
+    grid.open_wall(Position(1, 1), Wall.WEST)
+    grid.open_wall(Position(0, 1), Wall.SOUTH)
+    grid.open_wall(Position(0, 2), Wall.EAST)
+    grid.open_wall(Position(1, 2), Wall.EAST)
+    grid.open_wall(Position(2, 2), Wall.NORTH)
+    return MazeResult(
+        grid=grid,
+        entry=Position(0, 0),
+        exit=Position(2, 1),
+        shortest_path="ESWSEEN",
     )
 
 

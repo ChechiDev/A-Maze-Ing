@@ -10,7 +10,9 @@ CLEAR_SCREEN = "\x1b[2J"
 MOVE_HOME = "\x1b[H"
 HIDE_CURSOR = "\x1b[?25l"
 SHOW_CURSOR = "\x1b[?25h"
-CLEAR_LINE = "\x1b[2K"
+CLEAR_BELOW = "\x1b[J"
+BEGIN_SYNC = "\x1b[?2026h"
+END_SYNC = "\x1b[?2026l"
 _ANSI_SEQUENCE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 
 
@@ -21,7 +23,6 @@ class TerminalScreen:
         """Create a screen controller using the provided output stream."""
         self._stream = stream or sys.stdout
         self._cleared = False
-        self._previous_line_count = 0
         self._previous_width = 0
 
     def __enter__(self) -> Self:
@@ -62,11 +63,30 @@ class TerminalScreen:
         self._stream.write(SHOW_CURSOR)
 
     def render_frame(self, text: str) -> None:
-        """Render a complete terminal frame in-place."""
+        """Render a complete terminal frame in-place.
+
+        The frame overwrites the previous one without clearing the screen,
+        and is wrapped in a synchronized update so terminals that support it
+        show it at once, without flicker. Anything left below the frame, such
+        as echoed input or stray messages, is erased.
+        """
+        self._stream.write(BEGIN_SYNC)
         self.clear_once()
         self.move_home()
-        frame = self._padded_frame(text)
-        self._stream.write(frame)
+        self._stream.write(self._padded_frame(text))
+        self._stream.write(CLEAR_BELOW)
+        self._stream.write(END_SYNC)
+        self._stream.flush()
+
+    def draw_at(self, row: int, column: int, text: str) -> None:
+        """Draw text at a zero-based screen position without a full redraw.
+
+        Args:
+            row: Zero-based screen row, counted from the top of the frame.
+            column: Zero-based screen column.
+            text: Text to write at that position, colour codes included.
+        """
+        self._stream.write(f"\x1b[{row + 1};{column + 1}H{text}")
         self._stream.flush()
 
     def _padded_frame(self, text: str) -> str:
@@ -76,13 +96,6 @@ class TerminalScreen:
         padded_lines = [
             line + " " * (target_width - _visible_len(line)) for line in lines
         ]
-        current_line_count = len(lines)
-
-        if self._previous_line_count > current_line_count:
-            remaining = self._previous_line_count - current_line_count
-            padded_lines.extend(CLEAR_LINE for _ in range(remaining))
-
-        self._previous_line_count = current_line_count
         self._previous_width = width
         return "\n".join(padded_lines) + "\n"
 

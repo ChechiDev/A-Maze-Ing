@@ -3,8 +3,10 @@ from io import StringIO
 import pytest
 
 from ui.terminal_screen import (
-    CLEAR_LINE,
+    BEGIN_SYNC,
+    CLEAR_BELOW,
     CLEAR_SCREEN,
+    END_SYNC,
     HIDE_CURSOR,
     MOVE_HOME,
     SHOW_CURSOR,
@@ -100,7 +102,15 @@ def test_render_frame_first_frame_clears_moves_writes_and_flushes() -> None:
 
     TerminalScreen(stream).render_frame("frame")
 
-    assert stream.getvalue() == CLEAR_SCREEN + MOVE_HOME + MOVE_HOME + "frame\n"
+    assert stream.getvalue() == (
+        BEGIN_SYNC
+        + CLEAR_SCREEN
+        + MOVE_HOME
+        + MOVE_HOME
+        + "frame\n"
+        + CLEAR_BELOW
+        + END_SYNC
+    )
     assert stream.flush_count == 1
 
 
@@ -112,11 +122,13 @@ def test_render_frame_second_frame_moves_home_without_full_clear() -> None:
     screen.render_frame("second")
 
     assert stream.getvalue().count(CLEAR_SCREEN) == 1
-    assert stream.getvalue().endswith(MOVE_HOME + "second\n")
+    assert stream.getvalue().endswith(
+        BEGIN_SYNC + MOVE_HOME + "second\n" + CLEAR_BELOW + END_SYNC,
+    )
     assert stream.flush_count == 2
 
 
-def test_render_frame_pads_shorter_lines_and_clears_leftover_lines() -> None:
+def test_render_frame_pads_shorter_lines_and_clears_below_frame() -> None:
     stream = FakeStream()
     screen = TerminalScreen(stream)
 
@@ -124,7 +136,7 @@ def test_render_frame_pads_shorter_lines_and_clears_leftover_lines() -> None:
     screen.render_frame("tiny")
 
     assert stream.getvalue().endswith(
-        MOVE_HOME + "tiny  \n" + CLEAR_LINE + "\n",
+        MOVE_HOME + "tiny  \n" + CLEAR_BELOW + END_SYNC,
     )
 
 
@@ -145,8 +157,27 @@ def test_render_frame_clears_leftovers_of_wider_uncoloured_frame() -> None:
     screen.render_frame("\x1b[38;5;196mab\x1b[0m")
 
     assert stream.getvalue().endswith(
-        MOVE_HOME + "\x1b[38;5;196mab\x1b[0m  \n",
+        MOVE_HOME + "\x1b[38;5;196mab\x1b[0m  \n" + CLEAR_BELOW + END_SYNC,
     )
+
+
+def test_render_frame_never_clears_the_screen_again() -> None:
+    stream = FakeStream()
+    screen = TerminalScreen(stream)
+
+    for index in range(5):
+        screen.render_frame(f"frame {index}")
+
+    assert stream.getvalue().count(CLEAR_SCREEN) == 1
+
+
+def test_draw_at_moves_to_one_based_position_and_writes() -> None:
+    stream = FakeStream()
+
+    TerminalScreen(stream).draw_at(2, 5, "●")
+
+    assert stream.getvalue() == "\x1b[3;6H●"
+    assert stream.flush_count == 1
 
 
 def test_stream_injection_avoids_real_stdout() -> None:

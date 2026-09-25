@@ -16,6 +16,10 @@ from pydantic import (
 from mazegen.grid import Position
 
 
+DEFAULT_PATH_DELAY = 0.05
+MAX_PATH_DELAY = 1.0
+
+
 class MazeConfig(BaseModel):
     """Validated maze configuration loaded from KEY=VALUE settings."""
 
@@ -28,6 +32,12 @@ class MazeConfig(BaseModel):
     output_file: str = Field(alias="OUTPUT_FILE", min_length=1)
     perfect: bool = Field(alias="PERFECT")
     seed: int | None = Field(default=None, alias="SEED")
+    path_delay: float = Field(
+        default=DEFAULT_PATH_DELAY,
+        alias="PATH_DELAY",
+        ge=0,
+        le=MAX_PATH_DELAY,
+    )
 
     @field_validator("entry", "exit", mode="before")
     @classmethod

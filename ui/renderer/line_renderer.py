@@ -101,27 +101,82 @@ class LineRenderer:
             for x in range(0, len(canvas[y]), 2):
                 canvas[y][x] = _junction_symbol(canvas, y, x, self._palette)
 
+    def path_cells(self, result: MazeResult) -> list[tuple[int, int, str]]:
+        """Return the canvas cells of the shortest path in walking order.
+
+        The path is drawn as one continuous line: every cell it crosses and
+        every opened wall between two consecutive cells gets a line symbol,
+        with corners where the path turns.
+
+        Args:
+            result: Maze result whose shortest path is traced from the entry.
+
+        Returns:
+            ``(row, column, symbol)`` for each path canvas cell, excluding the
+            entry and exit cells.
+        """
+        positions = [result.entry]
+        for step in result.shortest_path:
+            wall = _wall_for_step(step)
+            if wall is not None:
+                positions.append(positions[-1].move(wall))
+
+        cells = []
+        for index, position in enumerate(positions):
+            if index > 0:
+                cells.append(self._path_gap(positions[index - 1], position))
+            if position in {result.entry, result.exit}:
+                continue
+            directions = {
+                _direction(position, positions[neighbour])
+                for neighbour in (index - 1, index + 1)
+                if 0 <= neighbour < len(positions)
+            }
+            canvas_y, canvas_x = _canvas_coordinates(position)
+            cells.append((canvas_y, canvas_x, self._path_symbol(directions)))
+        return cells
+
+    def paint_path(self, symbol: str) -> str:
+        """Return a path symbol as it is drawn, colour included."""
+        return colourize(symbol, self._colours.path)
+
+    def _path_gap(
+        self,
+        start: Position,
+        end: Position,
+    ) -> tuple[int, int, str]:
+        start_y, start_x = _canvas_coordinates(start)
+        end_y, end_x = _canvas_coordinates(end)
+        symbol = (
+            self._palette.path_horizontal
+            if start_y == end_y
+            else self._palette.path_vertical
+        )
+        return (start_y + end_y) // 2, (start_x + end_x) // 2, symbol
+
+    def _path_symbol(self, directions: set[Wall]) -> str:
+        palette = self._palette
+        if directions <= {Wall.EAST, Wall.WEST}:
+            return palette.path_horizontal
+        if directions <= {Wall.NORTH, Wall.SOUTH}:
+            return palette.path_vertical
+        if directions == {Wall.SOUTH, Wall.EAST}:
+            return palette.path_top_left
+        if directions == {Wall.SOUTH, Wall.WEST}:
+            return palette.path_top_right
+        if directions == {Wall.NORTH, Wall.EAST}:
+            return palette.path_bottom_left
+        return palette.path_bottom_right
+
     def _draw_path(
         self,
         canvas: list[list[str]],
         result: MazeResult,
         colours: CanvasColours,
     ) -> None:
-        position = result.entry
-        for step in result.shortest_path:
-            wall = _wall_for_step(step)
-            if wall is None:
-                continue
-            position = position.move(wall)
-            if position in {result.entry, result.exit}:
-                continue
-            self._mark_position(
-                canvas,
-                colours,
-                position,
-                self._palette.path,
-                self._colours.path,
-            )
+        for canvas_y, canvas_x, symbol in self.path_cells(result):
+            canvas[canvas_y][canvas_x] = symbol
+            colours[(canvas_y, canvas_x)] = self._colours.path
 
     def _mark_position(
         self,
@@ -219,6 +274,16 @@ def _tee_junction_symbol(
     if up and down and right:
         return palette.tee_right
     return palette.junction
+
+
+def _direction(start: Position, end: Position) -> Wall:
+    if end.x > start.x:
+        return Wall.EAST
+    if end.x < start.x:
+        return Wall.WEST
+    if end.y > start.y:
+        return Wall.SOUTH
+    return Wall.NORTH
 
 
 def _wall_for_step(step: str) -> Wall | None:

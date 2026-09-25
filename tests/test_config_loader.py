@@ -5,7 +5,12 @@ from pydantic import ValidationError
 
 from mazegen.generator import MazeGenerator, MazeOptions
 from mazegen.grid import Position
-from ui.config_loader import MazeConfig, load_config, parse_config_lines
+from ui.config_loader import (
+    DEFAULT_PATH_DELAY,
+    MazeConfig,
+    load_config,
+    parse_config_lines,
+)
 
 
 CONFIG_PATH = Path("config.txt")
@@ -301,6 +306,32 @@ def test_default_config_generates_a_maze() -> None:
     )
 
     assert result.shortest_path
+
+
+def test_maze_config_uses_default_path_delay() -> None:
+    config = MazeConfig.model_validate(_valid_config_entries())
+
+    assert config.path_delay == DEFAULT_PATH_DELAY
+
+
+def test_maze_config_accepts_path_delay() -> None:
+    entries = {**_valid_config_entries(), "PATH_DELAY": "0.1"}
+
+    assert MazeConfig.model_validate(entries).path_delay == 0.1
+
+
+def test_maze_config_accepts_zero_path_delay_to_disable_animation() -> None:
+    entries = {**_valid_config_entries(), "PATH_DELAY": "0"}
+
+    assert MazeConfig.model_validate(entries).path_delay == 0
+
+
+@pytest.mark.parametrize("value", ["-0.1", "1.5", "fast"])
+def test_maze_config_rejects_invalid_path_delay(value: str) -> None:
+    entries = {**_valid_config_entries(), "PATH_DELAY": value}
+
+    with pytest.raises(ValidationError):
+        MazeConfig.model_validate(entries)
 
 
 def test_load_config_accepts_path_object(tmp_path: Path) -> None:

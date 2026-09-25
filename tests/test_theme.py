@@ -98,7 +98,7 @@ def test_line_renderer_colours_each_maze_element() -> None:
     )
 
     assert "\x1b[38;5;1m┏━━━┓" in rendered
-    assert "\x1b[38;5;2m●" in rendered
+    assert "\x1b[38;5;2m─╮" in rendered
     assert "\x1b[38;5;3m█" in rendered
     assert "\x1b[38;5;4mE" in rendered
     assert "\x1b[38;5;5mS" in rendered

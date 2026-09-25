@@ -11,7 +11,7 @@ class RenderPalette:
     """Symbols used by text-based renderers."""
 
     wall: str = "█"
-    path: str = "●"
+    path: str = "◆"
     entry: str = "E"
     exit: str = "S"
     pattern: str = "█"
@@ -36,7 +36,12 @@ class LineRenderPalette:
     cross: str = "╋"
     entry: str = "E"
     exit: str = "S"
-    path: str = "●"
+    path_horizontal: str = "─"
+    path_vertical: str = "│"
+    path_top_left: str = "╭"
+    path_top_right: str = "╮"
+    path_bottom_left: str = "╰"
+    path_bottom_right: str = "╯"
     pattern: str = "█"
     empty: str = " "
 
