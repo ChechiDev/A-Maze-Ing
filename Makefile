@@ -1,4 +1,4 @@
-.PHONY: install run debug clean lint lint-strict test
+.PHONY: install run debug clean lint lint-strict test package
 
 install:
 	uv sync --group dev
@@ -23,3 +23,7 @@ lint-strict:
 
 test:
 	uv run pytest
+
+package:
+	rm -f mazegen-*.whl
+	uv build --wheel --out-dir .

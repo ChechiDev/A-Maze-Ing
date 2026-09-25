@@ -1,3 +1,11 @@
+# A-Maze-ing default configuration.
+# Use one KEY=VALUE pair per non-comment line.
+# Lines starting with # are comments.
+# Inline comments are not supported in KEY=VALUE lines.
+# ENTRY and EXIT use public x,y coordinates.
+# Required keys: WIDTH, HEIGHT, ENTRY, EXIT, OUTPUT_FILE, PERFECT.
+# Optional keys: SEED, PATH_DELAY.
+# PATH_DELAY: seconds per path cell in the path animation (0 to 1, 0 = off).
 WIDTH=42
 HEIGHT=12
 ENTRY=1,1
