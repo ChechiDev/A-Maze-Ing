@@ -3,23 +3,75 @@
 from mazegen.generator import MazeResult
 from mazegen.grid import ALL_WALLS, Position, Wall
 from ui.renderer.base import LineRenderPalette
+from ui.renderer.theme import PLAIN_THEME, ColourTheme, colourize
+
+
+CanvasColours = dict[tuple[int, int], int | None]
 
 
 class LineRenderer:
     """Render maze results using terminal line drawing symbols."""
 
-    def __init__(self, palette: LineRenderPalette | None = None) -> None:
-        """Create a renderer using the provided palette or defaults."""
+    def __init__(
+        self,
+        palette: LineRenderPalette | None = None,
+        colours: ColourTheme | None = None,
+    ) -> None:
+        """Create a renderer using the provided palette and colours.
+
+        Args:
+            palette: Symbols for walls and cells; defaults to heavy lines.
+            colours: ANSI colours per maze element; defaults to no colour.
+        """
         self._palette = palette or LineRenderPalette()
+        self._colours = colours or PLAIN_THEME
 
     def render(self, result: MazeResult, show_path: bool) -> str:
         """Return a line-art representation of the generated maze result."""
         canvas = self._build_canvas(result)
+        colours = self._pattern_colours(result)
         if show_path:
-            self._draw_path(canvas, result)
-        self._mark_position(canvas, result.entry, self._palette.entry)
-        self._mark_position(canvas, result.exit, self._palette.exit)
-        return "\n".join("".join(row) for row in canvas) + "\n"
+            self._draw_path(canvas, result, colours)
+        self._mark_position(
+            canvas,
+            colours,
+            result.entry,
+            self._palette.entry,
+            self._colours.entry,
+        )
+        self._mark_position(
+            canvas,
+            colours,
+            result.exit,
+            self._palette.exit,
+            self._colours.exit,
+        )
+        return self._join(canvas, colours)
+
+    def _pattern_colours(self, result: MazeResult) -> CanvasColours:
+        return {
+            _canvas_coordinates(position): self._colours.pattern
+            for position in result.grid.positions()
+            if result.grid.cell_at(position).walls == ALL_WALLS
+        }
+
+    def _join(self, canvas: list[list[str]], colours: CanvasColours) -> str:
+        lines = []
+        for y, row in enumerate(canvas):
+            runs: list[tuple[int | None, str]] = []
+            for x, symbol in enumerate(row):
+                colour = colours.get((y, x), self._wall_colour(symbol))
+                if runs and runs[-1][0] == colour:
+                    runs[-1] = (colour, runs[-1][1] + symbol)
+                else:
+                    runs.append((colour, symbol))
+            lines.append("".join(colourize(text, colour) for colour, text in runs))
+        return "\n".join(lines) + "\n"
+
+    def _wall_colour(self, symbol: str) -> int | None:
+        if symbol == self._palette.empty:
+            return None
+        return self._colours.wall
 
     def _build_canvas(self, result: MazeResult) -> list[list[str]]:
         rows = result.grid.height * 2 + 1
@@ -53,6 +105,7 @@ class LineRenderer:
         self,
         canvas: list[list[str]],
         result: MazeResult,
+        colours: CanvasColours,
     ) -> None:
         position = result.entry
         for step in result.shortest_path:
@@ -62,16 +115,25 @@ class LineRenderer:
             position = position.move(wall)
             if position in {result.entry, result.exit}:
                 continue
-            self._mark_position(canvas, position, self._palette.path)
+            self._mark_position(
+                canvas,
+                colours,
+                position,
+                self._palette.path,
+                self._colours.path,
+            )
 
     def _mark_position(
         self,
         canvas: list[list[str]],
+        colours: CanvasColours,
         position: Position,
         symbol: str,
+        colour: int | None,
     ) -> None:
         canvas_y, canvas_x = _canvas_coordinates(position)
         canvas[canvas_y][canvas_x] = symbol
+        colours[(canvas_y, canvas_x)] = colour
 
 
 def _canvas_coordinates(position: Position) -> tuple[int, int]:

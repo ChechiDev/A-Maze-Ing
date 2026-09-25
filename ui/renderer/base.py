@@ -1,5 +1,8 @@
+"""Contracts shared by maze renderers."""
+
 from dataclasses import dataclass
 from typing import Protocol
+
 from mazegen.generator import MazeResult
 
 
@@ -17,6 +20,8 @@ class RenderPalette:
 
 @dataclass(frozen=True, slots=True)
 class LineRenderPalette:
+    """Symbols used by line-art terminal renderers."""
+
     horizontal: str = "━"
     vertical: str = "┃"
     top_left: str = "┏"
@@ -34,6 +39,7 @@ class LineRenderPalette:
     path: str = "●"
     pattern: str = "█"
     empty: str = " "
+
 
 class Renderer(Protocol):
     """Protocol implemented by UI renderers."""

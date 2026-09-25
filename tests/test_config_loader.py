@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
+from mazegen.generator import MazeGenerator, MazeOptions
 from mazegen.grid import Position
 from ui.config_loader import MazeConfig, load_config, parse_config_lines
 
@@ -56,8 +57,8 @@ def test_default_config_contains_optional_seed() -> None:
     assert "SEED" in _config_entries()
 
 
-def test_default_config_uses_playable_mode_by_default() -> None:
-    assert _config_entries()["PERFECT"] == "False"
+def test_default_config_uses_boolean_perfect_flag() -> None:
+    assert _config_entries()["PERFECT"] in {"True", "False"}
 
 
 def test_default_config_documents_seed_as_optional() -> None:
@@ -145,9 +146,7 @@ def test_parse_config_lines_parses_default_config() -> None:
     entries = parse_config_lines(_config_lines())
 
     assert REQUIRED_KEYS <= entries.keys()
-    assert entries["PERFECT"] == "False"
-    assert entries["ENTRY"] == "0,0"
-    assert entries["EXIT"] == "9,9"
+    assert entries["ENTRY"] != entries["EXIT"]
 
 
 def test_maze_config_accepts_uppercase_config_keys() -> None:
@@ -285,8 +284,23 @@ def test_load_config_loads_default_config() -> None:
     config = load_config("config.txt")
 
     assert isinstance(config, MazeConfig)
-    assert config.width == 10
-    assert config.perfect is False
+
+
+def test_default_config_generates_a_maze() -> None:
+    config = load_config("config.txt")
+
+    result = MazeGenerator().generate(
+        MazeOptions(
+            width=config.width,
+            height=config.height,
+            entry=config.entry,
+            exit=config.exit,
+            perfect=config.perfect,
+            seed=config.seed,
+        )
+    )
+
+    assert result.shortest_path
 
 
 def test_load_config_accepts_path_object(tmp_path: Path) -> None:

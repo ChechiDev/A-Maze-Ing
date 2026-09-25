@@ -5,10 +5,10 @@
 # ENTRY and EXIT use public x,y coordinates.
 # Required keys: WIDTH, HEIGHT, ENTRY, EXIT, OUTPUT_FILE, PERFECT.
 # Optional keys supported initially: SEED.
-WIDTH=22
-HEIGHT=22
-ENTRY=2,3
-EXIT=8,8
+WIDTH=62
+HEIGHT=26
+ENTRY=3,3
+EXIT=60,20
 OUTPUT_FILE=maze.txt
 PERFECT=True
 SEED=42

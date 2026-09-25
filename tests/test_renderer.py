@@ -35,11 +35,11 @@ def test_renderer_module_imports_without_cli_side_effects() -> None:
 def test_render_palette_uses_default_symbols() -> None:
     palette = RenderPalette()
 
-    assert palette.wall == "#"
-    assert palette.path == "."
+    assert palette.wall == "█"
+    assert palette.path == "●"
     assert palette.entry == "E"
     assert palette.exit == "S"
-    assert palette.pattern == "4"
+    assert palette.pattern == "█"
     assert palette.empty == " "
 
 
@@ -64,22 +64,22 @@ def test_render_palette_accepts_custom_symbols() -> None:
 def test_line_render_palette_uses_default_line_symbols() -> None:
     palette = LineRenderPalette()
 
-    assert palette.horizontal == "─"
-    assert palette.vertical == "│"
-    assert palette.top_left == "┌"
-    assert palette.top_right == "┐"
-    assert palette.bottom_left == "└"
-    assert palette.bottom_right == "┘"
-    assert palette.junction == "┼"
-    assert palette.tee_up == "┴"
-    assert palette.tee_down == "┬"
-    assert palette.tee_left == "┤"
-    assert palette.tee_right == "├"
-    assert palette.cross == "┼"
+    assert palette.horizontal == "━"
+    assert palette.vertical == "┃"
+    assert palette.top_left == "┏"
+    assert palette.top_right == "┓"
+    assert palette.bottom_left == "┗"
+    assert palette.bottom_right == "┛"
+    assert palette.junction == "╋"
+    assert palette.tee_up == "┻"
+    assert palette.tee_down == "┳"
+    assert palette.tee_left == "┫"
+    assert palette.tee_right == "┣"
+    assert palette.cross == "╋"
     assert palette.entry == "E"
     assert palette.exit == "S"
-    assert palette.path == "·"
-    assert palette.pattern == "4"
+    assert palette.path == "●"
+    assert palette.pattern == "█"
     assert palette.empty == " "
     assert palette.horizontal != "#"
     assert palette.vertical != "#"
@@ -152,7 +152,7 @@ def test_ascii_renderer_show_path_changes_output() -> None:
     with_path = renderer.render(result, show_path=True)
 
     assert with_path != without_path
-    assert "." in with_path
+    assert RenderPalette().path in with_path
 
 
 def test_ascii_renderer_does_not_modify_grid() -> None:
@@ -214,8 +214,8 @@ def test_line_renderer_contains_entry_and_exit() -> None:
 def test_line_renderer_uses_line_symbols_not_hash_walls() -> None:
     rendered = LineRenderer().render(_horizontal_result(), show_path=False)
 
-    assert "─" in rendered
-    assert "│" in rendered
+    assert "━" in rendered
+    assert "┃" in rendered
     assert "#" not in rendered
 
 
@@ -227,7 +227,7 @@ def test_line_renderer_show_path_changes_output() -> None:
     with_path = renderer.render(result, show_path=True)
 
     assert with_path != without_path
-    assert "·" in with_path
+    assert "●" in with_path
 
 
 def test_line_renderer_does_not_modify_grid() -> None:
@@ -299,25 +299,25 @@ def test_line_renderer_distinguishes_fully_closed_cells() -> None:
 def test_line_renderer_horizontal_corridor_snapshot() -> None:
     rendered = LineRenderer().render(_horizontal_result(), show_path=False)
 
-    assert rendered == "┌───┐\n│E S│\n└───┘\n"
+    assert rendered == "┏━━━┓\n┃E S┃\n┗━━━┛\n"
 
 
 def test_line_renderer_single_fully_closed_cell_snapshot() -> None:
     rendered = LineRenderer().render(_minimal_result(), show_path=False)
 
-    assert rendered == "┌─┐\n│S│\n└─┘\n"
+    assert rendered == "┏━┓\n┃S┃\n┗━┛\n"
 
 
 def test_line_renderer_vertical_corridor_snapshot() -> None:
     rendered = LineRenderer().render(_vertical_result(), show_path=False)
 
-    assert rendered == "┌─┐\n│E│\n│ │\n│S│\n└─┘\n"
+    assert rendered == "┏━┓\n┃E┃\n┃ ┃\n┃S┃\n┗━┛\n"
 
 
 def test_line_renderer_l_shaped_path_snapshot() -> None:
     rendered = LineRenderer().render(_l_shaped_result(), show_path=True)
 
-    assert rendered == "┌───┐\n│E ·│\n├─┐ │\n│4│S│\n└─┴─┘\n"
+    assert rendered == "┏━━━┓\n┃E ●┃\n┣━┓ ┃\n┃█┃S┃\n┗━┻━┛\n"
 
 
 def test_line_renderer_path_does_not_overwrite_entry_or_exit() -> None:
@@ -325,7 +325,7 @@ def test_line_renderer_path_does_not_overwrite_entry_or_exit() -> None:
 
     assert "E" in rendered
     assert "S" in rendered
-    assert rendered.count("·") == 1
+    assert rendered.count("●") == 1
 
 
 def test_line_renderer_import_has_no_cli_side_effects() -> None:

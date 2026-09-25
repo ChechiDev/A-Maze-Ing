@@ -100,7 +100,7 @@ def test_render_frame_first_frame_clears_moves_writes_and_flushes() -> None:
 
     TerminalScreen(stream).render_frame("frame")
 
-    assert stream.getvalue() == CLEAR_SCREEN + MOVE_HOME + MOVE_HOME + "frame"
+    assert stream.getvalue() == CLEAR_SCREEN + MOVE_HOME + MOVE_HOME + "frame\n"
     assert stream.flush_count == 1
 
 
@@ -112,7 +112,7 @@ def test_render_frame_second_frame_moves_home_without_full_clear() -> None:
     screen.render_frame("second")
 
     assert stream.getvalue().count(CLEAR_SCREEN) == 1
-    assert stream.getvalue().endswith(MOVE_HOME + "second")
+    assert stream.getvalue().endswith(MOVE_HOME + "second\n")
     assert stream.flush_count == 2
 
 
@@ -123,7 +123,30 @@ def test_render_frame_pads_shorter_lines_and_clears_leftover_lines() -> None:
     screen.render_frame("longer\nsecond")
     screen.render_frame("tiny")
 
-    assert stream.getvalue().endswith(MOVE_HOME + "tiny  \n" + CLEAR_LINE)
+    assert stream.getvalue().endswith(
+        MOVE_HOME + "tiny  \n" + CLEAR_LINE + "\n",
+    )
+
+
+def test_render_frame_pads_by_visible_width_ignoring_colours() -> None:
+    stream = FakeStream()
+    screen = TerminalScreen(stream)
+
+    screen.render_frame("\x1b[38;5;196mab\x1b[0m\nabcd")
+
+    assert "\x1b[38;5;196mab\x1b[0m  \nabcd\n" in stream.getvalue()
+
+
+def test_render_frame_clears_leftovers_of_wider_uncoloured_frame() -> None:
+    stream = FakeStream()
+    screen = TerminalScreen(stream)
+
+    screen.render_frame("abcd")
+    screen.render_frame("\x1b[38;5;196mab\x1b[0m")
+
+    assert stream.getvalue().endswith(
+        MOVE_HOME + "\x1b[38;5;196mab\x1b[0m  \n",
+    )
 
 
 def test_stream_injection_avoids_real_stdout() -> None:

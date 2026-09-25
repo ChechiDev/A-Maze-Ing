@@ -1,10 +1,14 @@
 from ui.frame import FrameState, TerminalFrameComposer
 
 
-def test_terminal_frame_includes_title() -> None:
-    frame = TerminalFrameComposer().compose(_state())
-
-    assert "=== A-Maze-ing ===" in frame
+ACTIONS_BLOCK = (
+    "Actions:\n"
+    "1. Re-generate a new maze\n"
+    "2. Show / Hide the shortest path\n"
+    "3. Rotate wall colours\n"
+    "4. Quit\n"
+    "Choice?"
+)
 
 
 def test_terminal_frame_preserves_rendered_maze_text() -> None:
@@ -15,21 +19,34 @@ def test_terminal_frame_preserves_rendered_maze_text() -> None:
     assert "┌─┐\n│S│\n└─┘" in frame
 
 
-def test_terminal_frame_includes_legend() -> None:
+def test_terminal_frame_includes_menu_actions_in_order() -> None:
     frame = TerminalFrameComposer().compose(_state())
 
-    assert "Legend: E = entry, S = exit, ·/. = path, 4 = 42 cell" in frame
+    assert ACTIONS_BLOCK in frame
 
 
-def test_terminal_frame_includes_menu_actions() -> None:
-    frame = TerminalFrameComposer().compose(_state())
+def test_terminal_frame_places_actions_after_maze_and_path_state() -> None:
+    frame = TerminalFrameComposer().compose(_state(maze_text="MAZE\n"))
 
-    assert "Actions:" in frame
-    assert "1. Re-generate a new maze" in frame
-    assert "2. Show / Hide the shortest path" in frame
-    assert "3. Rotate wall colours" in frame
-    assert "4. Quit" in frame
-    assert "Choice? " in frame
+    assert frame.index("MAZE") < frame.index("Path:")
+    assert frame.index("Path:") < frame.index("Actions:")
+
+
+def test_terminal_frame_places_status_after_actions() -> None:
+    frame = TerminalFrameComposer().compose(_state(status="Hello."))
+
+    assert frame.index("Choice?") < frame.index("Status: Hello.")
+    assert frame.endswith("Status: Hello.\n")
+
+
+def test_terminal_frame_actions_do_not_change_with_state() -> None:
+    composer = TerminalFrameComposer()
+
+    shown = composer.compose(_state(show_path=True, status="a"))
+    hidden = composer.compose(_state(show_path=False, status="b"))
+
+    assert ACTIONS_BLOCK in shown
+    assert ACTIONS_BLOCK in hidden
 
 
 def test_terminal_frame_reflects_shown_path_state() -> None:
@@ -71,13 +88,9 @@ def test_terminal_frame_snapshot() -> None:
     )
 
     assert frame == (
-        "=== A-Maze-ing ===\n"
-        "\n"
         "┌───┐\n"
         "│E S│\n"
         "└───┘\n"
-        "\n"
-        "Legend: E = entry, S = exit, ·/. = path, 4 = 42 cell\n"
         "\n"
         "Path: hidden\n"
         "\n"
@@ -86,7 +99,7 @@ def test_terminal_frame_snapshot() -> None:
         "2. Show / Hide the shortest path\n"
         "3. Rotate wall colours\n"
         "4. Quit\n"
-        "Choice? \n"
+        "Choice?\n"
         "\n"
         "Status: Invalid choice.\n"
     )

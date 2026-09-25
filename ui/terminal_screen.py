@@ -1,3 +1,6 @@
+"""Terminal screen control helpers for stable frame redraws."""
+
+import re
 import sys
 from types import TracebackType
 from typing import Literal, Self, TextIO
@@ -8,6 +11,7 @@ MOVE_HOME = "\x1b[H"
 HIDE_CURSOR = "\x1b[?25l"
 SHOW_CURSOR = "\x1b[?25h"
 CLEAR_LINE = "\x1b[2K"
+_ANSI_SEQUENCE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 
 
 class TerminalScreen:
@@ -67,9 +71,11 @@ class TerminalScreen:
 
     def _padded_frame(self, text: str) -> str:
         lines = text.rstrip("\n").split("\n")
-        width = max((len(line) for line in lines), default=0)
+        width = max((_visible_len(line) for line in lines), default=0)
         target_width = max(width, self._previous_width)
-        padded_lines = [line.ljust(target_width) for line in lines]
+        padded_lines = [
+            line + " " * (target_width - _visible_len(line)) for line in lines
+        ]
         current_line_count = len(lines)
 
         if self._previous_line_count > current_line_count:
@@ -79,3 +85,7 @@ class TerminalScreen:
         self._previous_line_count = current_line_count
         self._previous_width = width
         return "\n".join(padded_lines) + "\n"
+
+
+def _visible_len(line: str) -> int:
+    return len(_ANSI_SEQUENCE.sub("", line))
